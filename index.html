@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <!-- Google tag (gtag.js) -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-D3BL1J1GPG"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-D3BL1J1GPG');
+  </script>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Padel Tournament Center</title>
+  <link rel="manifest" href="manifest.json" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Padel Center" />
+  <meta name="theme-color" content="#0f8089" />
+  <link rel="apple-touch-icon" sizes="192x192" href="padel_app_icon.png" />
+  <link rel="icon" type="image/png" sizes="192x192" href="padel_app_icon.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+<canvas id="confetti-canvas"></canvas>
+<div class="stage">
+  <div class="scrim" id="scrim" hidden></div>
+  <div class="window">
+
+    <aside class="sidebar" id="sidebar" aria-label="Main navigation">
+      <div class="side-head">
+        <div class="logo">Padel<span>Center</span></div>
+        <button class="side-close" id="sideClose" aria-label="Close menu"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+      </div>
+      <nav class="nav">
+        <button class="nav-item" data-nav="setup" title="New tournament"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg><span>New tournament</span></button>
+        <button class="nav-item" data-nav="live" title="Live tournament"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M10 8.5l5 3.5-5 3.5z"/></svg><span>Live tournament</span><i class="live-dot" id="liveDot" hidden></i></button>
+        <hr />
+        <button class="nav-item" data-nav="vault" title="Archive"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="5" rx="1.5"/><path d="M5 9v9a2 2 0 002 2h10a2 2 0 002-2V9M10 13h4"/></svg><span>Archive</span><b class="nav-badge" id="navArchiveCount">0</b></button>
+        <button class="nav-item" data-nav="players" title="Player stats"><svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 19c.6-3.2 2.8-5 5.5-5s4.9 1.8 5.5 5"/><circle cx="17" cy="9" r="2.4"/><path d="M15.8 14.2c2.3-.3 4.2 1.2 4.7 4.3"/></svg><span>Player stats</span></button>
+      </nav>
+      <button class="nav-item sync-btn" id="syncBtn" title="Online database"><svg viewBox="0 0 24 24"><path d="M7 18a4.5 4.5 0 01-.6-8.96A6 6 0 0118 9.5a4 4 0 01-.5 8.5z"/></svg><span id="syncLabel">Connecting…</span><i class="sync-dot" id="syncDot" data-tone="idle"></i></button>
+      <button class="nav-item install-btn" id="installBtn" hidden title="Install app"><svg viewBox="0 0 24 24"><path d="M12 4v11M7 11l5 5 5-5M5 20h14"/></svg><span>Install app</span></button>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <div class="title-row">
+          <button class="menu-btn" id="menuBtn" aria-label="Open menu" aria-controls="sidebar" aria-expanded="false"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+          <div><h1 id="pageTitle">New tournament</h1><p class="page-sub" id="pageSub"></p></div>
+        </div>
+      </header>
+
+      <div class="summary" id="summary" aria-live="polite"></div>
+
+      <!-- 1. SETUP -->
+      <section class="screen setup-grid" id="setup-screen">
+        <div class="panel">
+          <h2 class="panel-title">Tournament details</h2>
+          <div class="form-row">
+            <div class="fg fg-lg"><label for="tournament-name">Name</label><input type="text" id="tournament-name" placeholder="Tournament name"></div>
+            <div class="fg"><label for="tournament-date">Date</label><input type="date" id="tournament-date" onchange="onDateChange()"></div>
+          </div>
+          <div class="label-with-info">
+            <label for="tournament-type">Format</label>
+            <span class="info-icon-btn" id="info-icon" onclick="toggleFormatBubble(event)" title="View format rules">i</span>
+            <div id="format-bubble" class="format-popover hidden"><div class="popover-arrow"></div><div id="format-bubble-text">Individual players rotate partners each round.</div></div>
+          </div>
+          <select id="tournament-type" onchange="onFormatChange()">
+            <option value="super-mexicano">Super Mexicano (Individual - Rd3 1.1x, Rd4+ 1.2x)</option>
+            <option value="mexicano">Standard Mexicano (Individual - Seeded by Rank)</option>
+            <option value="americano">Standard Americano (Individual - Social Mix)</option>
+            <option value="team-mexicano">Team Mexicano (Fixed Duos - Seeded by Rank)</option>
+            <option value="team-americano">Team Americano (Fixed Duos - Social Mix)</option>
+            <option value="beat-the-box">Beat the Box (King of the Court: Box 1 to 8 Ladder)</option>
+          </select>
+          <div class="form-row">
+            <div class="fg"><label for="match-points">Match points</label>
+              <select id="match-points"><option value="8">8 Points</option><option value="16" selected>16 Points</option><option value="20">20 Points</option><option value="24">24 Points</option><option value="32">32 Points</option></select></div>
+            <div class="fg"><label for="court-count">Courts</label>
+              <select id="court-count" onchange="onCourtCountChange()"><option value="1">1 Court</option><option value="2" selected>2 Courts</option><option value="3">3 Courts</option><option value="4">4 Courts</option><option value="5">5 Courts</option><option value="6">6 Courts</option><option value="7">7 Courts</option><option value="8">8 Courts</option></select></div>
+            <div class="fg"><label for="participant-count" id="count-label">Number of Players</label>
+              <select id="participant-count" onchange="onParticipantCountChange()"></select></div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="label-with-info panel-title-row">
+            <h2 class="panel-title" id="participant-label">Enter Player Names</h2>
+            <span class="info-icon-btn" id="participant-info-icon" onclick="toggleParticipantBubble(event)" title="View requirements">i</span>
+            <div id="participant-bubble" class="format-popover hidden"><div class="popover-arrow"></div><div id="participant-bubble-text">Enter names in the rounded boxes below. Press Enter to quickly advance to the next player.</div></div>
+          </div>
+          <div id="participant-grid" class="participant-grid"></div>
+          <button class="btn" onclick="startTournament()">Start new tournament</button>
+          <button class="btn btn-ghost" onclick="openVaultScreen()">Open archive (<span id="archive-count-badge">0</span>)</button>
+        </div>
+      </section>
+
+      <!-- 2. ACTIVE TOURNAMENT -->
+      <section class="screen hidden" id="tournament-screen">
+        <div class="t-head">
+          <div><h2 id="active-tourney-display-title">Tournament Name</h2><span class="fmt-chip" id="active-tourney-display-format">SUPER MEXICANO</span></div>
+          <span class="t-date" id="active-tourney-display-date"></span>
+        </div>
+        <div class="tabs">
+          <button class="tab-btn active" id="tab-active" onclick="switchTab('active')">Active Round</button>
+          <button class="tab-btn" id="tab-leaderboard" onclick="switchTab('leaderboard')">Leaderboard</button>
+          <button class="tab-btn" id="tab-history" onclick="switchTab('history')">Match History</button>
+        </div>
+        <div class="panel">
+          <div id="content-active" class="tab-content">
+            <div id="tournament-completed-banner" class="hidden">
+              <div class="champion-banner"><h3>🏆 TOURNAMENT COMPLETED 🏆</h3><div class="champ-stats">All scheduled rounds have concluded. Check the Leaderboard tab for final standings and the crowned champion!</div></div>
+              <button class="btn btn-secondary" onclick="switchTab('leaderboard')">View final leaderboard</button>
+            </div>
+            <div id="round-active-container">
+              <h2 class="panel-title" id="round-title">Round 1</h2>
+              <p id="multiplier-info" class="helper-text"></p>
+              <div id="courts-container"></div>
+              <button class="btn" onclick="submitRound()">Submit round &amp; re-rank</button>
+              <button class="btn btn-finish-crown" id="btn-finish-crown-action" onclick="manualFinishTournament()">🏆 Finish tournament &amp; crown winner</button>
+            </div>
+          </div>
+          <div id="content-leaderboard" class="tab-content hidden">
+            <div id="leaderboard-champion-podium" class="hidden"></div>
+            <h2 class="panel-title">Leaderboard standings</h2>
+            <div class="table-responsive"><table class="leaderboard-table"><thead><tr>
+              <th>Rank</th><th id="th-name-label">Player / Team</th><th>Pts Won</th><th>Pts Lost</th><th>Diff</th><th>Played</th><th>W</th><th>T</th><th>L</th><th title="Times sat out">Byes</th>
+            </tr></thead><tbody id="leaderboard-body"></tbody></table></div>
+          </div>
+          <div id="content-history" class="tab-content hidden">
+            <h2 class="panel-title">Completed match logs</h2>
+            <div id="history-container"><p class="helper-text">No matches played yet.</p></div>
+            <div id="upcoming-schedule-container" class="hidden">
+              <h2 class="panel-title">Upcoming rounds schedule</h2>
+              <div id="upcoming-schedule-list"></div>
+            </div>
+          </div>
+        </div>
+        <div class="form-row actions">
+          <button class="btn btn-ghost" onclick="finishAndSaveTournament()">Save &amp; return to home</button>
+          <button class="btn btn-reset" onclick="resetTournament()">Abandon / exit</button>
+        </div>
+      </section>
+
+      <!-- 3. ARCHIVE -->
+      <section class="screen hidden" id="vault-screen">
+        <div class="panel">
+          <h2 class="panel-title">Saved tournaments</h2>
+          <div id="saved-tournaments-list"></div>
+          <button class="btn btn-secondary" onclick="closeVaultScreen()">Back to main menu</button>
+        </div>
+      </section>
+
+      <!-- 4. ARCHIVE DETAILS -->
+      <section class="screen hidden" id="archive-view-screen">
+        <div class="t-head">
+          <div><h2 id="view-archive-title">Tournament Name</h2><span class="t-date" id="view-archive-meta"></span></div>
+          <div class="head-actions">
+            <button class="btn-resume action-btn" id="view-modal-resume-btn" onclick="resumeFromViewModal()">Resume</button>
+            <button class="btn-secondary action-btn" onclick="closeArchiveViewer()">Back</button>
+          </div>
+        </div>
+        <div class="panel">
+          <h2 class="panel-title">Current / final standings</h2>
+          <div class="table-responsive"><table class="leaderboard-table"><thead><tr>
+            <th>Rank</th><th>Participant</th><th>Pts Won</th><th>Pts Lost</th><th>Diff</th><th>Played</th><th>W</th><th>T</th><th>L</th><th>Byes</th>
+          </tr></thead><tbody id="view-archive-leaderboard"></tbody></table></div>
+          <h2 class="panel-title gap-top">Match history log</h2>
+          <div id="view-archive-history"></div>
+          <div class="form-row actions">
+            <button class="btn" onclick="resumeFromViewModal()">Resume playing</button>
+            <button class="btn btn-secondary" onclick="closeArchiveViewer()">Back to archive</button>
+          </div>
+        </div>
+      </section>
+      <!-- 5. PLAYER STATS -->
+      <section class="screen hidden" id="players-screen">
+        <div class="panel">
+          <div class="pl-toolbar">
+            <div class="pl-seg" id="pl-kind" role="group" aria-label="Show" hidden>
+              <button data-kind="player" class="active">Players</button><button data-kind="team">Teams</button>
+            </div>
+            <input type="search" id="pl-search" placeholder="Search by name" aria-label="Search by name" />
+            <label class="pl-check"><input type="checkbox" id="pl-unfinished" /> Include unfinished</label>
+          </div>
+          <h2 class="panel-title">All-time standings <small class="pl-count" id="pl-count"></small></h2>
+          <p class="helper-text">Career totals across every saved tournament. Titles and podiums count completed tournaments only. Tap a name to see their tournament history.</p>
+          <div class="table-responsive"><table class="leaderboard-table pl-table">
+            <thead><tr id="pl-head"></tr></thead><tbody id="pl-body"></tbody>
+          </table></div>
+        </div>
+      </section>
+    </main>
+  </div>
+</div>
+
+<dialog class="sync-dialog" id="syncDialog" aria-labelledby="syncTitle">
+  <form method="dialog" id="syncForm">
+    <h2 id="syncTitle">Online database</h2>
+    <p class="sync-status"><i class="sync-dot" id="syncDialogDot" data-tone="idle"></i><span id="syncDetail"></span></p>
+    <label for="syncKey">Organiser key</label>
+    <input type="password" id="syncKey" autocomplete="current-password" placeholder="Needed to save tournaments to the database" />
+    <p class="helper-text" id="syncKeyHelp">Everyone can view the archive and player stats. Only devices with the organiser key can add, change or delete tournaments.</p>
+    <div class="sync-actions">
+      <button type="button" class="btn btn-ghost" id="syncForget">Remove key</button>
+      <button type="button" class="btn btn-secondary" id="syncNowBtn">Sync now</button>
+      <button type="submit" class="btn" id="syncSave" value="save">Save key</button>
+    </div>
+    <button type="button" class="sync-close" id="syncClose" aria-label="Close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+  </form>
+</dialog>
+<script src="cloud.js"></script>
+<script src="app.js"></script>
+<script src="players.js"></script>
+<script src="ui.js"></script>
+</body>
+</html>

@@ -1,0 +1,305 @@
+/* Storage layer + cloud sync.
+ *
+ * The app still saves every change to this device first (so it keeps working
+ * offline). This file then copies tournaments to the online database through
+ * /api/tournaments and pulls down tournaments saved from other devices.
+ *
+ * - Anyone can read the database. Saving to it needs the organiser key
+ *   (ADMIN_KEY in Vercel), entered once per device from the sidebar.
+ * - A record with `_synced: true` matches the database copy. The app rebuilds
+ *   the record on every autosave without that flag, so "not synced" simply
+ *   means "has changes to upload".
+ * - If the host has no /api (e.g. GitHub Pages) the app behaves exactly as before.
+ */
+const STORAGE_KEY = "padel_saved_tournaments_v5";
+
+function getSavedTournaments() {
+    try {
+        return JSON.parse(localStorage.getItem(STORAGE_KEY)) || [];
+    } catch (e) {
+        return [];
+    }
+}
+
+function saveTournamentsToStorage(list) {
+    window.CloudSync.writeLocal(list);
+    if (typeof updateArchiveCountBadge === 'function') updateArchiveCountBadge();
+}
+
+window.CloudSync = (() => {
+    const KEY_STORE = 'padel_organiser_key';
+    const DELETED_STORE = 'padel_sync_deleted_v1';
+    const API = './api';
+    // Fields only needed to resume play. Finished, already-uploaded tournaments
+    // can drop them if the device runs out of storage; they are re-downloaded on resume.
+    const HEAVY = ['fullPrecomputedSchedule', 'partnerCountMatrix', 'lastPartnerRound', 'teamOpponentCount',
+                   'lastTeamOpponentRound', 'roundActiveMatches', 'sittingOutThisRound', 'beatTheBoxPositions'];
+
+    const state = {
+        api: 'checking',       // checking | up | none | offline | error
+        writeEnabled: false,   // server has an ADMIN_KEY
+        authorized: false,     // this device's key is correct
+        busy: false,
+        error: '',
+        lastSync: 0
+    };
+    let running = null, again = false, flushTimer = null;
+
+    /* ---------- local storage ---------- */
+    const getKey = () => { try { return localStorage.getItem(KEY_STORE) || ''; } catch (e) { return ''; } };
+    const getDeleted = () => { try { return JSON.parse(localStorage.getItem(DELETED_STORE)) || []; } catch (e) { return []; } };
+    const setDeleted = list => { try { localStorage.setItem(DELETED_STORE, JSON.stringify(list)); } catch (e) {} };
+
+    function slimOne(list) {
+        const candidates = list
+            .filter(t => t._synced && t.isFinished && !t._slim)
+            .sort((a, b) => String(a.updatedAt).localeCompare(String(b.updatedAt)));
+        if (!candidates.length) return false;
+        HEAVY.forEach(f => delete candidates[0][f]);
+        candidates[0]._slim = true;
+        return true;
+    }
+
+    function writeLocal(list) {
+        for (;;) {
+            try {
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
+                return true;
+            } catch (e) {
+                if (!slimOne(list)) {
+                    console.error('Could not save to this device', e);
+                    alert('This device is out of storage space for tournaments. Delete some old tournaments from the archive.');
+                    return false;
+                }
+            }
+        }
+    }
+
+    function liveId() {
+        const screen = document.getElementById('tournament-screen');
+        const open = screen && !screen.classList.contains('hidden');
+        return open && typeof tournamentId !== 'undefined' ? tournamentId : null;
+    }
+
+    const changed = () => window.dispatchEvent(new Event('padel:data-changed'));
+
+    /* ---------- network ---------- */
+    async function api(path, options = {}) {
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), 15000);
+        const headers = { ...(options.headers || {}) };
+        const key = getKey();
+        if (key) headers['x-admin-key'] = key;
+        if (options.body) headers['content-type'] = 'application/json';
+        try {
+            const res = await fetch(API + path, { ...options, headers, signal: ctrl.signal, cache: 'no-store' });
+            let data = null;
+            try { data = await res.json(); } catch (e) {}
+            if (!res.ok) {
+                const err = new Error((data && data.error) || `Request failed (${res.status})`);
+                err.status = res.status;
+                throw err;
+            }
+            return data;
+        } finally {
+            clearTimeout(timer);
+        }
+    }
+
+    async function checkHealth() {
+        if (!navigator.onLine) { state.api = 'offline'; return; }
+        try {
+            const h = await api('/health');
+            state.api = 'up';
+            state.writeEnabled = !!h.writeEnabled;
+            state.authorized = !!h.authorized;
+            state.error = '';
+        } catch (e) {
+            if (e.status === 404 || e.status === 405) state.api = 'none';           // static host, no API
+            else if (e.status) { state.api = 'error'; state.error = e.message; }    // API up, database not
+            else state.api = navigator.onLine ? 'error' : 'offline';
+            if (state.api === 'error' && !state.error) state.error = 'Could not reach the database.';
+        }
+    }
+
+    const canWrite = () => state.api === 'up' && state.authorized;
+
+    /* ---------- upload ---------- */
+    async function pushDeletes() {
+        for (const id of getDeleted()) {
+            try {
+                await api('/tournaments?id=' + encodeURIComponent(id), { method: 'DELETE' });
+            } catch (e) {
+                if (e.status !== 400) throw e; // invalid id: drop it below
+            }
+            setDeleted(getDeleted().filter(x => x !== id));
+        }
+    }
+
+    async function pushSaves() {
+        let anyStale = false;
+        const pending = getSavedTournaments().filter(t => !t._synced && !t._slim);
+        for (const rec of pending) {
+            const res = await api('/tournaments', { method: 'PUT', body: JSON.stringify(rec) });
+            if (res && res.stale) anyStale = true;
+            // Mark as synced only if nothing changed locally while uploading.
+            const list = getSavedTournaments();
+            const cur = list.find(t => t.id === rec.id);
+            if (cur && cur.updatedAt === rec.updatedAt) {
+                cur._synced = true;
+                writeLocal(list);
+            }
+        }
+        return anyStale;
+    }
+
+    /* ---------- download ---------- */
+    async function fetchFull(ids) {
+        const out = [];
+        for (let i = 0; i < ids.length; i += 25) {
+            const batch = ids.slice(i, i + 25);
+            const data = await api('/tournaments?ids=' + batch.map(encodeURIComponent).join(','));
+            out.push(...(data.tournaments || []));
+        }
+        return out;
+    }
+
+    async function pull() {
+        const { tournaments: remote = [] } = await api('/tournaments');
+        const deleted = new Set(getDeleted());
+        const open = liveId();
+        let local = getSavedTournaments();
+        const byId = new Map(local.map(t => [t.id, t]));
+        const remoteIds = new Set(remote.map(r => r.id));
+
+        const need = remote
+            .filter(r => !deleted.has(r.id) && r.id !== open)
+            .filter(r => {
+                const l = byId.get(r.id);
+                return !l || Date.parse(r.updated_at) > Date.parse(l.updatedAt || 0);
+            })
+            .map(r => r.id);
+
+        // Uploaded before but gone from the database: deleted on another device.
+        // An empty database is treated as new or reset instead, so local copies
+        // are kept and uploaded again rather than wiped.
+        const missing = local.filter(t => t._synced && !remoteIds.has(t.id) && t.id !== open);
+        const freshDatabase = remote.length === 0;
+
+        if (!need.length && !missing.length) return false;
+        const fresh = need.length ? await fetchFull(need) : [];
+
+        local = getSavedTournaments();
+        if (freshDatabase) local.forEach(t => { if (missing.some(m => m.id === t.id)) delete t._synced; });
+        else local = local.filter(t => !missing.some(m => m.id === t.id));
+        for (const rec of fresh) {
+            rec._synced = true;
+            const i = local.findIndex(t => t.id === rec.id);
+            if (i >= 0) local[i] = rec; else local.push(rec);
+        }
+        local.sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')) ||
+                             String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')));
+        writeLocal(local);
+        return true;
+    }
+
+    /* ---------- orchestration ---------- */
+    async function syncNow() {
+        if (running) { again = true; return running; }
+        running = (async () => {
+            state.busy = true; changed();
+            try {
+                await checkHealth();
+                if (state.api !== 'up') return;
+                if (canWrite()) await pushDeletes();
+                let dataChanged = await pull();
+                if (canWrite() && await pushSaves()) dataChanged = (await pull()) || dataChanged;
+                state.lastSync = Date.now();
+                state.error = '';
+                if (dataChanged && typeof updateArchiveCountBadge === 'function') updateArchiveCountBadge();
+            } catch (e) {
+                console.warn('Sync failed:', e);
+                if (e.status === 401) state.authorized = false;
+                state.api = navigator.onLine ? 'error' : 'offline';
+                state.error = e.message;
+            } finally {
+                state.busy = false;
+                running = null;
+                rerenderOpenLists();
+                changed();
+                if (again) { again = false; syncNow(); }
+            }
+        })();
+        return running;
+    }
+
+    function rerenderOpenLists() {
+        const vault = document.getElementById('vault-screen');
+        if (vault && !vault.classList.contains('hidden') && typeof renderSavedTournamentsList === 'function') renderSavedTournamentsList();
+    }
+
+    // Called by the engine after every autosave.
+    function queueSave() {
+        changed();
+        if (state.api !== 'up' || !getKey()) return;
+        clearTimeout(flushTimer);
+        flushTimer = setTimeout(syncNow, 1200);
+    }
+
+    // Called by the engine after a tournament is deleted on this device.
+    function queueDelete(id) {
+        if (getKey()) setDeleted([...new Set([...getDeleted(), id])]);
+        queueSave();
+    }
+
+    // Re-download a tournament that was trimmed to save space, before resuming it.
+    async function loadFull(id) {
+        try {
+            const [rec] = await fetchFull([id]);
+            if (!rec) return false;
+            rec._synced = true;
+            const list = getSavedTournaments();
+            const i = list.findIndex(t => t.id === id);
+            if (i >= 0) list[i] = rec; else list.unshift(rec);
+            return writeLocal(list);
+        } catch (e) {
+            return false;
+        }
+    }
+
+    async function setKey(key) {
+        try {
+            if (key) localStorage.setItem(KEY_STORE, key.trim()); else localStorage.removeItem(KEY_STORE);
+        } catch (e) {}
+        await syncNow();
+        return state.authorized;
+    }
+
+    function status() {
+        const pending = getSavedTournaments().filter(t => !t._synced).length;
+        const s = state;
+        if (s.api === 'checking') return { tone: 'idle', label: 'Connecting…', detail: 'Looking for the online database.' };
+        if (s.api === 'none') return { tone: 'idle', label: 'This device only', detail: 'This site has no database connected, so tournaments are saved on this device only.' };
+        if (s.api === 'offline') return { tone: 'warn', label: 'Offline', detail: 'No internet connection. Everything is saved on this device and will upload when you are back online.' };
+        if (s.api === 'error') return { tone: 'bad', label: 'Sync problem', detail: s.error || 'Could not reach the database. Your tournaments are still saved on this device.' };
+        if (s.busy) return { tone: 'busy', label: 'Syncing…', detail: 'Exchanging tournaments with the database.' };
+        if (!s.authorized) {
+            return s.writeEnabled
+                ? { tone: 'idle', label: 'View only', detail: 'You can see every tournament in the database. Enter the organiser key to save new tournaments to it.' }
+                : { tone: 'idle', label: 'View only', detail: 'Saving to the database is switched off (no ADMIN_KEY is set on the server).' };
+        }
+        if (pending) return { tone: 'warn', label: `${pending} to upload`, detail: 'Some changes have not reached the database yet.' };
+        return { tone: 'good', label: 'Synced', detail: 'All tournaments on this device are saved in the database.' };
+    }
+
+    window.addEventListener('online', () => syncNow());
+    window.addEventListener('offline', () => { state.api = 'offline'; changed(); });
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible' && Date.now() - state.lastSync > 60000) syncNow();
+    });
+    // Start once the page is parsed; no need to wait for fonts or analytics to load.
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => syncNow());
+    else syncNow();
+
+    return { writeLocal, queueSave, queueDelete, loadFull, syncNow, setKey, status, hasKey: () => !!getKey(), canWrite, state };
+})();
