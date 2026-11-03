@@ -1,10 +1,18 @@
 /* Padel Tournament Center – engine (logic unchanged; colours tuned for the light theme).
    Saving and loading lives in cloud.js (this device + online database). */
 
-    // Points use decimals because of the court multipliers (e.g. 16 × 1.075 = 17.2).
-    // Values are kept to 2 decimal places so totals don't pick up floating-point noise.
-    const round2 = n => Math.round(((Number(n) || 0) + Number.EPSILON) * 100) / 100;
-    const fmtPts = n => String(round2(n));
+    // POINTS: exact values are stored and used for every calculation and for ranking
+    // (e.g. 14.8, then + 0.5 = 15.3). Only the screen shows whole numbers, rounded to the
+    // nearest (14.8 → 15, 15.3 → 15). exactPts keeps 4 decimal places so floating-point noise
+    // like 22.999999999999996 never builds up.
+    const exactPts = n => Math.round((Number(n) || 0) * 10000) / 10000;
+    // Whole number for display, rounded to nearest (halves round away from zero: 6.5 → 7, -6.5 → -7).
+    const showPts = n => { const v = exactPts(n); return Math.sign(v) * Math.round(Math.abs(v) + 1e-9) || 0; };
+    const fmtPts = n => String(showPts(n));
+    // Table cell: whole number, with the exact value on hover.
+    const ptsCell = n => `<span title="Exact: ${exactPts(n)}">${fmtPts(n)}</span>`;
+    // Difference shown as (shown won − shown lost) so the columns always add up on screen.
+    const shownDiff = (won, lost) => showPts(won) - showPts(lost);
 
     let participants = [];
     let currentRound = 1;
@@ -287,8 +295,8 @@
                 if (a.currentBox !== b.currentBox) return a.currentBox - b.currentBox;
             }
             if (b.points !== a.points) return b.points - a.points;
-            const diffA = round2(a.points - (a.pointsLost || 0));
-            const diffB = round2(b.points - (b.pointsLost || 0));
+            const diffA = exactPts(a.points - (a.pointsLost || 0));
+            const diffB = exactPts(b.points - (b.pointsLost || 0));
             if (diffB !== diffA) return diffB - diffA;
             if (b.wins !== a.wins) return b.wins - a.wins;
             return a.losses - b.losses;
@@ -655,7 +663,7 @@
         // Older saves: total points minus earlier rest awards.
         const restPts = (history || []).reduce((sum, r) =>
             sum + (r.byesApplied || []).filter(b => b.name === p.name).reduce((n, b) => n + (b.pts || 0), 0), 0);
-        return Math.max(0, round2((p.points || 0) - restPts));
+        return Math.max(0, exactPts((p.points || 0) - restPts));
     }
 
     // Court a resting player/team would have been seeded on, from their current standing
@@ -667,8 +675,8 @@
         }
         const ranked = [...participants].sort((a, b) => {
             if (b.points !== a.points) return b.points - a.points;
-            const diffA = round2(a.points - a.pointsLost);
-            const diffB = round2(b.points - b.pointsLost);
+            const diffA = exactPts(a.points - a.pointsLost);
+            const diffB = exactPts(b.points - b.pointsLost);
             if (diffB !== diffA) return diffB - diffA;
             return b.wins - a.wins;
         });
@@ -698,7 +706,7 @@
         const mult = getCourtMultiplier(court);
         const played = p.roundsPlayed || 0;
         const own = played > 0 ? getRawPoints(p) / played : null;
-        const fmtNum = round2;
+        const fmtNum = n => Math.round(n * 100) / 100;
         const multTxt = mult !== 1 ? ` × ${mult} (Court ${court} standing)` : '';
 
         let raw, source;
@@ -715,8 +723,8 @@
             raw = roundBase;
             source = `round base ${fmtNum(raw)} pts`;
         }
-        const awarded = round2(raw * mult);
-        const conceded = round2(Math.max(0, maxPoints - raw) * mult);
+        const awarded = exactPts(raw * mult);
+        const conceded = exactPts(Math.max(0, maxPoints - raw) * mult);
         return { court, mult, base: fmtNum(raw), awarded, conceded, note: source + multTxt };
     }
 
@@ -837,8 +845,8 @@
         } else if (format === 'team-mexicano') {
             active.sort((a, b) => {
                 if (b.points !== a.points) return b.points - a.points;
-                const diffA = round2(a.points - a.pointsLost);
-                const diffB = round2(b.points - b.pointsLost);
+                const diffA = exactPts(a.points - a.pointsLost);
+                const diffB = exactPts(b.points - b.pointsLost);
                 if (diffB !== diffA) return diffB - diffA;
                 return b.wins - a.wins;
             });
@@ -861,8 +869,8 @@
         } else {
             active.sort((a, b) => {
                 if (b.points !== a.points) return b.points - a.points;
-                const diffA = round2(a.points - a.pointsLost);
-                const diffB = round2(b.points - b.pointsLost);
+                const diffA = exactPts(a.points - a.pointsLost);
+                const diffB = exactPts(b.points - b.pointsLost);
                 if (diffB !== diffA) return diffB - diffA;
                 return b.wins - a.wins;
             });
@@ -981,13 +989,13 @@
         const podium = document.getElementById('leaderboard-champion-podium');
         if (winner && podium) {
             podium.classList.remove('hidden');
-            const diff = round2(winner.points - (winner.pointsLost || 0));
+            const diff = shownDiff(winner.points, winner.pointsLost || 0);
             const diffSign = diff > 0 ? '+' : '';
             podium.innerHTML = `
                 <div class="champion-banner">
                     <h3>🏆 TOURNAMENT CHAMPION 🏆</h3>
                     <div class="champ-name">${winner.name}</div>
-                    <div class="champ-stats">${fmtPts(winner.points)} Pts Won &nbsp;|&nbsp; Diff: ${diffSign}${fmtPts(diff)} &nbsp;|&nbsp; Matches: ${winner.wins}W - ${winner.ties}T - ${winner.losses}L</div>
+                    <div class="champ-stats">${fmtPts(winner.points)} Pts Won &nbsp;|&nbsp; Diff: ${diffSign}${diff} &nbsp;|&nbsp; Matches: ${winner.wins}W - ${winner.ties}T - ${winner.losses}L</div>
                 </div>
             `;
         }
@@ -1072,8 +1080,8 @@
 
             const mult = getCourtMultiplier(match.courtNum);
 
-            const weightedT1 = round2(t1 * mult);
-            const weightedT2 = round2(t2 * mult);
+            const weightedT1 = exactPts(t1 * mult);
+            const weightedT2 = exactPts(t2 * mult);
 
             let t1Outcome = 'tie';
             let t2Outcome = 'tie';
@@ -1143,8 +1151,8 @@
             if (!original) return;
             original.byeCount++;
             original.lastByeRound = currentRound;
-            original.points = round2(original.points + award.awarded);
-            original.pointsLost = round2(original.pointsLost + award.conceded);
+            original.points = exactPts(original.points + award.awarded);
+            original.pointsLost = exactPts(original.pointsLost + award.conceded);
 
             roundLogItem.byesApplied.push({
                 name: original.name, pts: award.awarded, calculation: award.note,
@@ -1169,8 +1177,8 @@
     function updateParticipant(name, ptsWon, ptsLost, outcome, rawWon = ptsWon, rawLost = ptsLost) {
         let p = participants.find(x => x.name === name);
         if (p) {
-            p.points = round2(p.points + ptsWon);
-            p.pointsLost = round2(p.pointsLost + ptsLost);
+            p.points = exactPts(p.points + ptsWon);
+            p.pointsLost = exactPts(p.pointsLost + ptsLost);
             p.rawPoints = (p.rawPoints || 0) + rawWon;   // unmultiplied match points, used for rest averages
             p.rawPointsLost = (p.rawPointsLost || 0) + rawLost;
             p.roundsPlayed++;
@@ -1186,8 +1194,8 @@
                 if (a.currentBox !== b.currentBox) return a.currentBox - b.currentBox;
             }
             if (b.points !== a.points) return b.points - a.points;
-            const diffA = round2(a.points - a.pointsLost);
-            const diffB = round2(b.points - b.pointsLost);
+            const diffA = exactPts(a.points - a.pointsLost);
+            const diffB = exactPts(b.points - b.pointsLost);
             if (diffB !== diffA) return diffB - diffA;
             if (b.wins !== a.wins) return b.wins - a.wins;
             return a.losses - b.losses;
@@ -1195,7 +1203,7 @@
 
         const tbody = document.getElementById('leaderboard-body');
         tbody.innerHTML = displayList.map((p, idx) => {
-            const diff = round2(p.points - p.pointsLost);
+            const diff = shownDiff(p.points, p.pointsLost);
             const diffSign = diff > 0 ? '+' : '';
             const boxBadge = format === 'beat-the-box' ? `<span class="badge" style="background:#3b82f6; margin-left:6px;">Box ${p.currentBox || '-'}</span>` : '';
             
@@ -1207,10 +1215,10 @@
                 <tr style="${rowStyle}">
                     <td><strong>${rankBadge}</strong></td>
                     <td><strong>${p.name}</strong>${boxBadge}</td>
-                    <td style="font-weight:bold; color:var(--accent);">${fmtPts(p.points)}</td>
+                    <td style="font-weight:bold; color:var(--accent);">${ptsCell(p.points)}</td>
                     <td class="raw-col" title="Points scored in matches at 1.0x. Used only for rest averages.">${fmtPts(getRawPoints(p))}</td>
-                    <td style="font-weight:bold; color:#d63a5a;">${fmtPts(p.pointsLost)}</td>
-                    <td style="font-weight:600; color:${diff >= 0 ? '#0e7a82' : '#d63a5a'};">${diffSign}${fmtPts(diff)}</td>
+                    <td style="font-weight:bold; color:#d63a5a;">${ptsCell(p.pointsLost)}</td>
+                    <td style="font-weight:600; color:${diff >= 0 ? '#0e7a82' : '#d63a5a'};">${diffSign}${diff}</td>
                     <td>${p.roundsPlayed}</td>
                     <td style="color:#1f9d55; font-weight:600;">${p.wins}</td>
                     <td style="color:#b7860b; font-weight:600;">${p.ties}</td>
@@ -1445,15 +1453,15 @@
                 return a.currentBox - b.currentBox;
             }
             if (b.points !== a.points) return b.points - a.points;
-            const diffA = round2(a.points - (a.pointsLost || 0));
-            const diffB = round2(b.points - (b.pointsLost || 0));
+            const diffA = exactPts(a.points - (a.pointsLost || 0));
+            const diffB = exactPts(b.points - (b.pointsLost || 0));
             if (diffB !== diffA) return diffB - diffA;
             if (b.wins !== a.wins) return b.wins - a.wins;
             return a.losses - b.losses;
         });
 
         document.getElementById('view-archive-leaderboard').innerHTML = displayList.map((p, idx) => {
-            const diff = round2(p.points - (p.pointsLost || 0));
+            const diff = shownDiff(p.points, p.pointsLost || 0);
             const diffSign = diff > 0 ? '+' : '';
             const boxBadge = t.format === 'beat-the-box' ? `<span class="badge" style="background:#3b82f6; margin-left:6px;">Box ${p.currentBox || '-'}</span>` : '';
             const isWinner = t.isFinished && idx === 0;
@@ -1461,10 +1469,10 @@
                 <tr style="${isWinner ? 'background: rgba(245, 158, 11, 0.12);' : ''}">
                     <td><strong>${isWinner ? '👑 #1' : `#${idx + 1}`}</strong></td>
                     <td><strong>${p.name}</strong>${boxBadge}</td>
-                    <td style="font-weight:bold; color:var(--accent);">${fmtPts(p.points)}</td>
+                    <td style="font-weight:bold; color:var(--accent);">${ptsCell(p.points)}</td>
                     <td class="raw-col" title="Points scored in matches at 1.0x. Used only for rest averages.">${fmtPts(getRawPoints(p, t.matchHistory))}</td>
-                    <td style="font-weight:bold; color:#d63a5a;">${fmtPts(p.pointsLost)}</td>
-                    <td style="font-weight:600; color:${diff >= 0 ? '#0e7a82' : '#d63a5a'};">${diffSign}${fmtPts(diff)}</td>
+                    <td style="font-weight:bold; color:#d63a5a;">${ptsCell(p.pointsLost)}</td>
+                    <td style="font-weight:600; color:${diff >= 0 ? '#0e7a82' : '#d63a5a'};">${diffSign}${diff}</td>
                     <td>${p.roundsPlayed}</td>
                     <td style="color:#1f9d55; font-weight:600;">${p.wins || 0}</td>
                     <td style="color:#b7860b; font-weight:600;">${p.ties || 0}</td>

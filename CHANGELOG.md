@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.2.5 – 2026-11-03
+
+- Exact points: multiplied scores and rest points are stored with their decimals (4 places) and every calculation, ranking and the winner use the exact values. A total of 14.8 shows as 15, the next round adds to 14.8 (not 15), and 15.3 shows as 15.
+- Screens round to the nearest whole number (halves round up); hover over a points value to see the exact figure. The Diff column is shown as shown-won minus shown-lost so the columns add up.
+- Database: point columns become exact NUMERIC (from whole numbers or 2 decimal places). The upgrade runs automatically on the next request and keeps existing values.
+
+## 1.2.4 – 2026-11-03
+
+- Points are whole numbers again: multiplied scores and rest points are rounded down (14.2 and 14.6 both become 14; rest 6.5 becomes 6). Tournaments that already recorded decimal points keep them; new rounds add whole numbers. No database change is needed.
+
 ## 1.2.0 – 2026-11-03
 
 - Super Mexicano multipliers now depend on how many courts are in use: the bottom court is always 1.0x and higher courts earn more (2 courts 1.1/1.0, 3 courts 1.2/1.1/1.0, 4 courts 1.225/1.15/1.075/1.0, up to a 1.3x cap). Rounds 1–2 stay flat 1.0x; one court has no multipliers. Full table in the README; values in `SUPER_MEXICANO_COURT_MULTIPLIERS` in `app.js`.

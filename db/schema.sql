@@ -34,8 +34,8 @@ CREATE TABLE IF NOT EXISTS tournament_entries (
   player_id     INT  NOT NULL REFERENCES players(id),
   name          TEXT NOT NULL,
   final_rank    INT  NOT NULL,
-  points        NUMERIC(10,2) NOT NULL DEFAULT 0,
-  points_lost   NUMERIC(10,2) NOT NULL DEFAULT 0,
+  points        NUMERIC NOT NULL DEFAULT 0,
+  points_lost   NUMERIC NOT NULL DEFAULT 0,
   played        INT  NOT NULL DEFAULT 0,
   wins          INT  NOT NULL DEFAULT 0,
   ties          INT  NOT NULL DEFAULT 0,
@@ -54,8 +54,8 @@ CREATE TABLE IF NOT EXISTS matches (
   team2         TEXT    NOT NULL,
   score1        INT     NOT NULL,
   score2        INT     NOT NULL,
-  weighted1     NUMERIC(10,2) NOT NULL,
-  weighted2     NUMERIC(10,2) NOT NULL,
+  weighted1     NUMERIC NOT NULL,
+  weighted2     NUMERIC NOT NULL,
   multiplier    NUMERIC NOT NULL DEFAULT 1,
   PRIMARY KEY (tournament_id, round, court)
 );
@@ -63,17 +63,19 @@ CREATE TABLE IF NOT EXISTS matches (
 DO $$
  BEGIN
    IF EXISTS (SELECT 1 FROM information_schema.columns
-               WHERE table_name = 'tournament_entries' AND column_name = 'points' AND data_type = 'integer') THEN
+               WHERE table_name = 'tournament_entries' AND column_name = 'points'
+                 AND (data_type = 'integer' OR numeric_scale IS NOT NULL)) THEN
      DROP VIEW IF EXISTS player_career_stats;
      ALTER TABLE tournament_entries
-       ALTER COLUMN points      TYPE NUMERIC(10,2),
-       ALTER COLUMN points_lost TYPE NUMERIC(10,2);
+       ALTER COLUMN points      TYPE NUMERIC,
+       ALTER COLUMN points_lost TYPE NUMERIC;
    END IF;
    IF EXISTS (SELECT 1 FROM information_schema.columns
-               WHERE table_name = 'matches' AND column_name = 'weighted1' AND data_type = 'integer') THEN
+               WHERE table_name = 'matches' AND column_name = 'weighted1'
+                 AND (data_type = 'integer' OR numeric_scale IS NOT NULL)) THEN
      ALTER TABLE matches
-       ALTER COLUMN weighted1 TYPE NUMERIC(10,2),
-       ALTER COLUMN weighted2 TYPE NUMERIC(10,2);
+       ALTER COLUMN weighted1 TYPE NUMERIC,
+       ALTER COLUMN weighted2 TYPE NUMERIC;
    END IF;
  END $$;
 

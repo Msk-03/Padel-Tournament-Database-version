@@ -6,7 +6,10 @@ window.Players = (() => {
     const TEAM_FORMATS = ['team-mexicano', 'team-americano', 'beat-the-box'];
     const ui = { kind: 'player', includeUnfinished: false, query: '', sort: 'rank', dir: 1, open: null };
 
-    const round2 = n => Math.round(((Number(n) || 0) + Number.EPSILON) * 100) / 100;
+    // Exact points for sums and ranking; whole numbers (nearest) on screen, exact value on hover.
+    const exact = n => Math.round((Number(n) || 0) * 10000) / 10000;
+    const show = n => { const v = exact(n); return Math.sign(v) * Math.round(Math.abs(v) + 1e-9) || 0; };
+    const cell = n => `<span title="Exact: ${exact(n)}">${show(n)}</span>`;
     const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
     const keyOf = s => String(s).trim().replace(/\s+/g, ' ').toLowerCase();
     const ordinal = n => n + (['th', 'st', 'nd', 'rd'][(n % 100 - 20) % 10] || ['th', 'st', 'nd', 'rd'][n % 100] || 'th');
@@ -17,7 +20,7 @@ window.Players = (() => {
         return [...(t.participants || t.players || [])].sort((a, b) => {
             if (t.format === 'beat-the-box' && a.currentBox && b.currentBox && a.currentBox !== b.currentBox) return a.currentBox - b.currentBox;
             if ((b.points || 0) !== (a.points || 0)) return (b.points || 0) - (a.points || 0);
-            const dA = round2((a.points || 0) - (a.pointsLost || 0)), dB = round2((b.points || 0) - (b.pointsLost || 0));
+            const dA = exact((a.points || 0) - (a.pointsLost || 0)), dB = exact((b.points || 0) - (b.pointsLost || 0));
             if (dB !== dA) return dB - dA;
             if ((b.wins || 0) !== (a.wins || 0)) return (b.wins || 0) - (a.wins || 0);
             return (a.losses || 0) - (b.losses || 0);
@@ -47,7 +50,7 @@ window.Players = (() => {
             });
         }
         const rows = [...people.values()].map(r => {
-            const sum = f => round2(r.events.reduce((n, e) => n + e[f], 0));
+            const sum = f => exact(r.events.reduce((n, e) => n + e[f], 0));
             const wins = sum('wins'), ties = sum('ties'), losses = sum('losses'), decided = wins + ties + losses;
             const fin = r.events.filter(e => e.finished);
             r.events.sort((a, b) => b.date.localeCompare(a.date));
@@ -58,7 +61,7 @@ window.Players = (() => {
                 podiums: fin.filter(e => e.rank <= 3).length,
                 played: sum('played'), wins, ties, losses,
                 winPct: decided ? (100 * wins) / decided : 0,
-                points: sum('points'), diff: round2(sum('points') - sum('lost')),
+                points: sum('points'), lost: sum('lost'), diff: show(sum('points')) - show(sum('lost')),
                 best: fin.length ? Math.min(...fin.map(e => e.rank)) : null
             };
         });
@@ -96,7 +99,7 @@ window.Players = (() => {
             <li class="pl-event">
                 <span class="pl-finish ${e.finished && e.rank === 1 ? 'gold' : ''}">${e.finished ? (e.rank === 1 ? '🏆 ' : '') + ordinal(e.rank) : 'Live · ' + ordinal(e.rank)}<small> of ${e.field}</small></span>
                 <span class="pl-event-name"><strong>${esc(e.tName)}</strong><small>${esc(e.date)} · ${esc(fmtName(e.format))}</small></span>
-                <span class="pl-event-stats">${e.points} pts · ${e.wins}W ${e.ties}T ${e.losses}L</span>
+                <span class="pl-event-stats">${cell(e.points)} pts · ${e.wins}W ${e.ties}T ${e.losses}L</span>
                 <button class="action-btn btn-view-sm" data-open="${esc(e.id)}">View</button>
             </li>`).join('');
         return `<tr class="pl-detail"><td colspan="${COLS.length}"><ul class="pl-events">${items}</ul></td></tr>`;
@@ -138,7 +141,7 @@ window.Players = (() => {
                 <td style="color:#b7860b;font-weight:600">${r.ties}</td>
                 <td style="color:#d63a3a;font-weight:600">${r.losses}</td>
                 <td><strong>${r.winPct.toFixed(0)}%</strong></td>
-                <td style="font-weight:bold;color:var(--accent)">${r.points}</td>
+                <td style="font-weight:bold;color:var(--accent)">${cell(r.points)}</td>
                 <td style="font-weight:600;color:${r.diff >= 0 ? '#0e7a82' : '#d63a5a'}">${r.diff > 0 ? '+' : ''}${r.diff}</td>
             </tr>${open ? detailHtml(r) : ''}`;
         }).join('');

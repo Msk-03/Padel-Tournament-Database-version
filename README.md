@@ -45,7 +45,7 @@ Rounds 1–2 are flat 1.0x. From round 3, each court's scores are multiplied by:
 
 The bottom court is always 1.0x; from 5 courts the top court is capped at 1.3x. Change the values in `SUPER_MEXICANO_COURT_MULTIPLIERS` in `app.js`.
 
-Points keep two decimal places (e.g. 9 × 1.225 = 11.03), so multiplied scores and rest points are never rounded to whole numbers.
+Points are kept exact (e.g. 9 × 1.225 = 11.025) in the app and the database, and every calculation and ranking uses the exact values. Screens show whole numbers rounded to the nearest (14.8 → 15, 15.3 → 15); hover over a points value to see the exact figure.
 
 ## Deploy to Vercel with a free database
 
@@ -98,7 +98,7 @@ GitHub Pages only hosts static files, so the app runs there exactly as before: e
 |---|---|---|
 | `tournaments` | tournament | name, date, format, courts, rounds played, finished, winner, `state` (full app record as JSON) |
 | `players` | player or fixed team | display name; names are matched ignoring case and extra spaces, so "Ali" and "ali " are the same person |
-| `tournament_entries` | player per tournament | final rank, points won/lost (2 decimal places), played, wins, ties, losses, byes |
+| `tournament_entries` | player per tournament | final rank, exact points won/lost, played, wins, ties, losses, byes |
 | `matches` | match | round, court, both sides, raw and weighted scores, multiplier |
 
 The view `player_career_stats` adds up each player's career. Example queries for the Neon SQL editor:

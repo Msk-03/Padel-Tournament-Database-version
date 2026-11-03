@@ -79,8 +79,9 @@ export const isValidId = id => typeof id === 'string' && ID_RE.test(id);
 export const nameKey = s => String(s).trim().replace(/\s+/g, ' ').toLowerCase();
 
 const int = v => (Number.isFinite(Number(v)) ? Math.round(Number(v)) : 0);
-// Points can have decimals because of court multipliers; keep 2 decimal places.
-const pts = v => (Number.isFinite(Number(v)) ? Math.round(Number(v) * 100) / 100 : 0);
+// Points are stored exactly (court multipliers make decimals such as 14.8); the app only
+// rounds them for display. 4 decimal places, the same precision the app keeps.
+const pts = v => (Number.isFinite(Number(v)) ? Math.round(Number(v) * 10000) / 10000 : 0);
 const text = (v, max = 200) => String(v ?? '').trim().slice(0, max);
 
 // Same ordering the app uses for its leaderboard.

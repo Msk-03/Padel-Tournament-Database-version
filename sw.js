@@ -1,5 +1,5 @@
 // Service worker: installable + works offline (network first, cached fallback)
-const CACHE = 'padel-center-v8';
+const CACHE = 'padel-center-v10';
 const ASSETS = ['./', './index.html', './style.css', './cloud.js', './app.js', './players.js', './ui.js', './manifest.json', './padel_app_icon.png', './padel_app_icon_512.png'];
 
 self.addEventListener('install', e => {
