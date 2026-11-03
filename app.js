@@ -1,6 +1,11 @@
 /* Padel Tournament Center – engine (logic unchanged; colours tuned for the light theme).
    Saving and loading lives in cloud.js (this device + online database). */
 
+    // Points use decimals because of the court multipliers (e.g. 16 × 1.075 = 17.2).
+    // Values are kept to 2 decimal places so totals don't pick up floating-point noise.
+    const round2 = n => Math.round(((Number(n) || 0) + Number.EPSILON) * 100) / 100;
+    const fmtPts = n => String(round2(n));
+
     let participants = [];
     let currentRound = 1;
     let maxPoints = 16;
@@ -244,7 +249,7 @@
             countLabel.innerText = "Number of Players";
             pHint.innerText = `Requires at least ${courtCount * 4} individual players (${courtCount} courts × 4 players). Press Enter to advance.`;
             fDesc.innerText = fmt === 'super-mexicano'
-                ? "Individual Super Mexicano: Rotating partners. Multipliers: Flat 1.0x (Rd 1-2), 1.1x (Rd 3), 1.2x (Rd 4+)."
+                ? "Individual Super Mexicano: Rotating partners. Rounds 1-2 flat 1.0x; from round 3 higher courts score more (2 courts: 1.1/1.0, 3 courts: 1.2/1.1/1.0, 4 courts: 1.225/1.15/1.075/1.0 ...). One court = no multipliers."
                 : (fmt === 'mexicano' 
                     ? "Individual Mexicano: Rotating partners. Seeded by rank with flat 1.0x scoring." 
                     : "Individual Americano: Rotating partners. Full rotation generated with zero partner repeats until everyone partners with each other.");
@@ -282,8 +287,8 @@
                 if (a.currentBox !== b.currentBox) return a.currentBox - b.currentBox;
             }
             if (b.points !== a.points) return b.points - a.points;
-            const diffA = a.points - (a.pointsLost || 0);
-            const diffB = b.points - (b.pointsLost || 0);
+            const diffA = round2(a.points - (a.pointsLost || 0));
+            const diffB = round2(b.points - (b.pointsLost || 0));
             if (diffB !== diffA) return diffB - diffA;
             if (b.wins !== a.wins) return b.wins - a.wins;
             return a.losses - b.losses;
@@ -525,6 +530,8 @@
             name: name, 
             points: 0, 
             pointsLost: 0,
+            rawPoints: 0,
+            rawPointsLost: 0,
             roundsPlayed: 0, 
             wins: 0,
             ties: 0,
@@ -612,17 +619,105 @@
         }
     }
 
-    function getMultipliersForRound(roundNum) {
-        if (format !== 'super-mexicano') {
-            return { c1: 1.0, c2: 1.0, others: 1.0 };
+    // Super Mexicano court multipliers by number of courts in use, listed Court 1 (top) first.
+    // The bottom court is always 1.0x and each court above it earns a little more; from 5 courts
+    // the top court is capped at 1.3x and the steps get smaller so the spread stays fair.
+    // Used from round SUPER_MEXICANO_FROM_ROUND onwards; earlier rounds are flat 1.0x while
+    // players are first sorted onto courts.
+    const SUPER_MEXICANO_COURT_MULTIPLIERS = {
+        1: [1.0],
+        2: [1.1, 1.0],
+        3: [1.2, 1.1, 1.0],
+        4: [1.225, 1.15, 1.075, 1.0],
+        5: [1.3, 1.225, 1.15, 1.075, 1.0],
+        6: [1.3, 1.24, 1.18, 1.12, 1.06, 1.0],
+        7: [1.3, 1.25, 1.2, 1.15, 1.1, 1.05, 1.0],
+        8: [1.3, 1.257, 1.214, 1.171, 1.129, 1.086, 1.043, 1.0]
+    };
+    const SUPER_MEXICANO_FROM_ROUND = 3;
+
+    function getCourtMultiplier(courtNum, roundNum = currentRound) {
+        if (format !== 'super-mexicano' || roundNum < SUPER_MEXICANO_FROM_ROUND) return 1.0;
+        const row = SUPER_MEXICANO_COURT_MULTIPLIERS[totalCourts] || [1.0];
+        return row[courtNum - 1] ?? 1.0;
+    }
+
+    function multiplierSummary(roundNum = currentRound) {
+        const parts = [];
+        for (let c = 1; c <= totalCourts; c++) parts.push(`Court ${c} = ${getCourtMultiplier(c, roundNum)}x`);
+        return parts.join(' | ');
+    }
+
+    // Points scored in matches at 1.0x (no multipliers, no rest awards). Shown in the tables and
+    // used only to work out rest averages; standings and the winner use the multiplied points.
+    function getRawPoints(p, history = matchHistoryLog) {
+        if (typeof p.rawPoints === 'number') return p.rawPoints;
+        // Older saves: total points minus earlier rest awards.
+        const restPts = (history || []).reduce((sum, r) =>
+            sum + (r.byesApplied || []).filter(b => b.name === p.name).reduce((n, b) => n + (b.pts || 0), 0), 0);
+        return Math.max(0, round2((p.points || 0) - restPts));
+    }
+
+    // Court a resting player/team would have been seeded on, from their current standing
+    // (same order the round is seeded by: points, then difference, then wins).
+    function getStandingCourt(participantId) {
+        if (format === 'beat-the-box') {
+            const p = participants.find(x => x.id === participantId);
+            return Math.min(Math.max(1, (p && p.currentBox) || 1), totalCourts);
         }
-        if (roundNum <= 2) {
-            return { c1: 1.0, c2: 1.0, others: 1.0 };
-        } else if (roundNum === 3) {
-            return { c1: 1.1, c2: 1.0, others: 1.0 };
+        const ranked = [...participants].sort((a, b) => {
+            if (b.points !== a.points) return b.points - a.points;
+            const diffA = round2(a.points - a.pointsLost);
+            const diffB = round2(b.points - b.pointsLost);
+            if (diffB !== diffA) return diffB - diffA;
+            return b.wins - a.wins;
+        });
+        const idx = ranked.findIndex(x => x.id === participantId);
+        const perCourt = isTeamFormat() ? 2 : 4;
+        return Math.min(Math.floor(Math.max(0, idx) / perCourt) + 1, totalCourts);
+    }
+
+    // Base score for this round: the 1.0x points scored by everyone who played it, divided by
+    // the number of players who played. Each match adds both sides' scores for 2 × (side size)
+    // players, so this is Σ(score1 + score2) / (2 × matches).
+    function computeRoundBaseScore(scores) {
+        if (!scores.length) return maxPoints / 2;
+        const total = scores.reduce((n, [a, b]) => n + a + b, 0);
+        return total / (2 * scores.length);
+    }
+
+    // Points a resting player/team receives, times the multiplier of the court their standing puts them on:
+    //  - no matches played yet (e.g. resting in round 1): the round's base score above
+    //  - exactly one match played:  (round base score + their score) / 2
+    //    e.g. base 8, scored 5 → (8 + 5) / 2 = 6.5, so one low or high game doesn't decide it alone
+    //  - two or more matches played: their own average 1.0x score per match
+    // 1.0x scores are used so earlier multipliers and earlier rest awards don't inflate the average.
+    // Pass roundBase = null to preview before the round's scores exist.
+    function computeByeAward(p, roundBase = null) {
+        const court = getStandingCourt(p.id);
+        const mult = getCourtMultiplier(court);
+        const played = p.roundsPlayed || 0;
+        const own = played > 0 ? getRawPoints(p) / played : null;
+        const fmtNum = round2;
+        const multTxt = mult !== 1 ? ` × ${mult} (Court ${court} standing)` : '';
+
+        let raw, source;
+        if (played >= 2) {
+            raw = own;
+            source = `avg ${fmtNum(own)} pts`;
+        } else if (roundBase === null) {
+            const pending = played === 0 ? 'round base score' : `(round base + ${fmtNum(own)}) / 2`;
+            return { court, mult, base: null, awarded: null, conceded: null, note: pending + multTxt };
+        } else if (played === 1) {
+            raw = (roundBase + own) / 2;
+            source = `(base ${fmtNum(roundBase)} + ${fmtNum(own)}) / 2 = ${fmtNum(raw)} pts`;
         } else {
-            return { c1: 1.2, c2: 1.0, others: 1.0 };
+            raw = roundBase;
+            source = `round base ${fmtNum(raw)} pts`;
         }
+        const awarded = round2(raw * mult);
+        const conceded = round2(Math.max(0, maxPoints - raw) * mult);
+        return { court, mult, base: fmtNum(raw), awarded, conceded, note: source + multTxt };
     }
 
     function varCourtColor(num) {
@@ -663,10 +758,11 @@
         document.getElementById('round-title').innerText = 'Round ' + currentRound;
         
         let infoStr = "";
-        if (format === 'super-mexicano') {
-            if (currentRound <= 2) infoStr = "Round " + currentRound + ": Flat 1.0x baseline evaluation on all courts.";
-            else if (currentRound === 3) infoStr = "Round 3: Court 1 Multiplier = 1.1x | Other Courts = 1.0x";
-            else infoStr = "Round " + currentRound + ": Court 1 Multiplier = 1.2x (Capped) | Other Courts = 1.0x";
+        if (format === 'super-mexicano' && totalCourts < 2) {
+            infoStr = "Single court: no multipliers, every match counts 1.0x.";
+        } else if (format === 'super-mexicano') {
+            if (currentRound < SUPER_MEXICANO_FROM_ROUND) infoStr = "Round " + currentRound + ": Flat 1.0x baseline evaluation on all courts.";
+            else infoStr = "Round " + currentRound + ": " + multiplierSummary();
         } else if (format === 'mexicano') {
             infoStr = "Standard Mexicano: Individual rank-seeded courts with dynamic partner shuffle.";
         } else if (format === 'americano') {
@@ -741,8 +837,8 @@
         } else if (format === 'team-mexicano') {
             active.sort((a, b) => {
                 if (b.points !== a.points) return b.points - a.points;
-                const diffA = a.points - a.pointsLost;
-                const diffB = b.points - b.pointsLost;
+                const diffA = round2(a.points - a.pointsLost);
+                const diffB = round2(b.points - b.pointsLost);
                 if (diffB !== diffA) return diffB - diffA;
                 return b.wins - a.wins;
             });
@@ -765,8 +861,8 @@
         } else {
             active.sort((a, b) => {
                 if (b.points !== a.points) return b.points - a.points;
-                const diffA = a.points - a.pointsLost;
-                const diffB = b.points - b.pointsLost;
+                const diffA = round2(a.points - a.pointsLost);
+                const diffB = round2(b.points - b.pointsLost);
                 if (diffB !== diffA) return diffB - diffA;
                 return b.wins - a.wins;
             });
@@ -794,7 +890,6 @@
     function renderRoundLayout() {
         const container = document.getElementById('courts-container');
         let html = '';
-        const mults = getMultipliersForRound(currentRound);
         const isTeam = isTeamFormat();
 
         roundActiveMatches.forEach((match, idx) => {
@@ -802,9 +897,7 @@
             let color = varCourtColor(match.courtNum);
             
             if (format === 'super-mexicano') {
-                if (match.courtNum === 1) label = mults.c1 + 'x Multiplier';
-                else if (match.courtNum === 2) label = mults.c2 + 'x Multiplier';
-                else label = mults.others + 'x Multiplier';
+                label = getCourtMultiplier(match.courtNum) + 'x Multiplier';
             } else if (format === 'beat-the-box') {
                 label = match.courtNum === 1 ? '👑 Top Box 1' : `Box ${match.courtNum}`;
             }
@@ -831,9 +924,14 @@
 
         if (sittingOutThisRound.length > 0) {
             const unit = isTeam ? "Team(s)" : "Player(s)";
+            const restLines = sittingOutThisRound.map(s => {
+                const p = participants.find(x => x.id === s.id) || s;
+                const a = computeByeAward(p);
+                return `${p.name} <small style="color:var(--text-muted)">(${a.awarded === null ? '' : '+' + a.awarded + ': '}${a.note})</small>`;
+            }).join(', ');
             html += `<div class="bye-list">
-                <strong>Resting This Round (${unit} on Bye):</strong> ${sittingOutThisRound.map(p => p.name).join(', ')}<br>
-                <small style="color:var(--text-muted)">Guaranteed to play next round. Average points will be awarded when submitted.</small>
+                <strong>Resting This Round (${unit} on Bye):</strong> ${restLines}<br>
+                <small style="color:var(--text-muted)">Guaranteed to play next round. Rest points (1.0x scores): no games yet = this round's base score (total points scored ÷ players who played); 1 game = (base score + their score) ÷ 2; 2+ games = their average. Then times the multiplier of the court their current standing puts them on.</small>
             </div>`;
         }
 
@@ -883,13 +981,13 @@
         const podium = document.getElementById('leaderboard-champion-podium');
         if (winner && podium) {
             podium.classList.remove('hidden');
-            const diff = winner.points - (winner.pointsLost || 0);
+            const diff = round2(winner.points - (winner.pointsLost || 0));
             const diffSign = diff > 0 ? '+' : '';
             podium.innerHTML = `
                 <div class="champion-banner">
                     <h3>🏆 TOURNAMENT CHAMPION 🏆</h3>
                     <div class="champ-name">${winner.name}</div>
-                    <div class="champ-stats">${winner.points} Pts Won &nbsp;|&nbsp; Diff: ${diffSign}${diff} &nbsp;|&nbsp; Matches: ${winner.wins}W - ${winner.ties}T - ${winner.losses}L</div>
+                    <div class="champ-stats">${fmtPts(winner.points)} Pts Won &nbsp;|&nbsp; Diff: ${diffSign}${fmtPts(diff)} &nbsp;|&nbsp; Matches: ${winner.wins}W - ${winner.ties}T - ${winner.losses}L</div>
                 </div>
             `;
         }
@@ -954,23 +1052,28 @@
             }
         }
 
-        const mults = getMultipliersForRound(currentRound);
         let roundLogItem = { round: currentRound, matches: [], byesApplied: [] };
         const isTeam = isTeamFormat();
+
+        // Rest awards use standings as they were when this round was drawn, so work them out first.
+        const roundScores = roundActiveMatches.map((m, i) => [
+            parseInt(document.getElementById('score-' + i + '-t1').value),
+            parseInt(document.getElementById('score-' + i + '-t2').value)
+        ]);
+        const roundBase = computeRoundBaseScore(roundScores);
+        const byeAwards = sittingOutThisRound.map(s => {
+            const original = participants.find(x => x.id === s.id);
+            return { original, award: original ? computeByeAward(original, roundBase) : null };
+        });
 
         roundActiveMatches.forEach((match, i) => {
             const t1 = parseInt(document.getElementById('score-' + i + '-t1').value);
             const t2 = parseInt(document.getElementById('score-' + i + '-t2').value);
 
-            let mult = 1.0;
-            if (format === 'super-mexicano') {
-                if (match.courtNum === 1) mult = mults.c1;
-                else if (match.courtNum === 2) mult = mults.c2;
-                else mult = mults.others;
-            }
+            const mult = getCourtMultiplier(match.courtNum);
 
-            const weightedT1 = Math.round(t1 * mult);
-            const weightedT2 = Math.round(t2 * mult);
+            const weightedT1 = round2(t1 * mult);
+            const weightedT2 = round2(t2 * mult);
 
             let t1Outcome = 'tie';
             let t2Outcome = 'tie';
@@ -978,8 +1081,8 @@
             else if (t2 > t1) { t1Outcome = 'loss'; t2Outcome = 'win'; }
 
             if (isTeam) {
-                updateParticipant(match.p1, weightedT1, weightedT2, t1Outcome);
-                updateParticipant(match.p3, weightedT2, weightedT1, t2Outcome);
+                updateParticipant(match.p1, weightedT1, weightedT2, t1Outcome, t1, t2);
+                updateParticipant(match.p3, weightedT2, weightedT1, t2Outcome, t2, t1);
 
                 if (format === 'beat-the-box') {
                     const team1Obj = participants.find(x => x.id === match.team1Id);
@@ -1018,10 +1121,10 @@
                 partnerCountMatrix[kA] = (partnerCountMatrix[kA] || 0) + 1;
                 partnerCountMatrix[kB] = (partnerCountMatrix[kB] || 0) + 1;
 
-                updateParticipant(match.p1, weightedT1, weightedT2, t1Outcome);
-                updateParticipant(match.p2, weightedT1, weightedT2, t1Outcome);
-                updateParticipant(match.p3, weightedT2, weightedT1, t2Outcome);
-                updateParticipant(match.p4, weightedT2, weightedT1, t2Outcome);
+                updateParticipant(match.p1, weightedT1, weightedT2, t1Outcome, t1, t2);
+                updateParticipant(match.p2, weightedT1, weightedT2, t1Outcome, t1, t2);
+                updateParticipant(match.p3, weightedT2, weightedT1, t2Outcome, t2, t1);
+                updateParticipant(match.p4, weightedT2, weightedT1, t2Outcome, t2, t1);
 
                 roundLogItem.matches.push({
                     court: match.courtNum,
@@ -1036,26 +1139,17 @@
             }
         });
 
-        sittingOutThisRound.forEach(p => {
-            let original = participants.find(x => x.id === p.id);
+        byeAwards.forEach(({ original, award }) => {
+            if (!original) return;
             original.byeCount++;
             original.lastByeRound = currentRound;
-            
-            let pointsAwarded = 0;
-            let note = "";
-            if (original.roundsPlayed > 0) {
-                pointsAwarded = Math.round(original.points / original.roundsPlayed);
-                note = "Average points (" + pointsAwarded + " pts)";
-            } else {
-                pointsAwarded = Math.round(maxPoints / 2);
-                note = "Base points (" + pointsAwarded + " pts)";
-            }
-            
-            original.points += pointsAwarded;
-            const byeConceded = Math.max(0, maxPoints - pointsAwarded);
-            original.pointsLost += byeConceded;
+            original.points = round2(original.points + award.awarded);
+            original.pointsLost = round2(original.pointsLost + award.conceded);
 
-            roundLogItem.byesApplied.push({ name: original.name, pts: pointsAwarded, calculation: note });
+            roundLogItem.byesApplied.push({
+                name: original.name, pts: award.awarded, calculation: award.note,
+                base: award.base, court: award.court, mult: award.mult
+            });
         });
 
         matchHistoryLog.push(roundLogItem);
@@ -1072,11 +1166,13 @@
         autoSaveCurrentTournament();
     }
 
-    function updateParticipant(name, ptsWon, ptsLost, outcome) {
+    function updateParticipant(name, ptsWon, ptsLost, outcome, rawWon = ptsWon, rawLost = ptsLost) {
         let p = participants.find(x => x.name === name);
         if (p) {
-            p.points += ptsWon;
-            p.pointsLost += ptsLost;
+            p.points = round2(p.points + ptsWon);
+            p.pointsLost = round2(p.pointsLost + ptsLost);
+            p.rawPoints = (p.rawPoints || 0) + rawWon;   // unmultiplied match points, used for rest averages
+            p.rawPointsLost = (p.rawPointsLost || 0) + rawLost;
             p.roundsPlayed++;
             if (outcome === 'win') p.wins++;
             else if (outcome === 'loss') p.losses++;
@@ -1090,8 +1186,8 @@
                 if (a.currentBox !== b.currentBox) return a.currentBox - b.currentBox;
             }
             if (b.points !== a.points) return b.points - a.points;
-            const diffA = a.points - a.pointsLost;
-            const diffB = b.points - b.pointsLost;
+            const diffA = round2(a.points - a.pointsLost);
+            const diffB = round2(b.points - b.pointsLost);
             if (diffB !== diffA) return diffB - diffA;
             if (b.wins !== a.wins) return b.wins - a.wins;
             return a.losses - b.losses;
@@ -1099,7 +1195,7 @@
 
         const tbody = document.getElementById('leaderboard-body');
         tbody.innerHTML = displayList.map((p, idx) => {
-            const diff = p.points - p.pointsLost;
+            const diff = round2(p.points - p.pointsLost);
             const diffSign = diff > 0 ? '+' : '';
             const boxBadge = format === 'beat-the-box' ? `<span class="badge" style="background:#3b82f6; margin-left:6px;">Box ${p.currentBox || '-'}</span>` : '';
             
@@ -1111,9 +1207,10 @@
                 <tr style="${rowStyle}">
                     <td><strong>${rankBadge}</strong></td>
                     <td><strong>${p.name}</strong>${boxBadge}</td>
-                    <td style="font-weight:bold; color:var(--accent);">${p.points}</td>
-                    <td style="font-weight:bold; color:#d63a5a;">${p.pointsLost}</td>
-                    <td style="font-weight:600; color:${diff >= 0 ? '#0e7a82' : '#d63a5a'};">${diffSign}${diff}</td>
+                    <td style="font-weight:bold; color:var(--accent);">${fmtPts(p.points)}</td>
+                    <td class="raw-col" title="Points scored in matches at 1.0x. Used only for rest averages.">${fmtPts(getRawPoints(p))}</td>
+                    <td style="font-weight:bold; color:#d63a5a;">${fmtPts(p.pointsLost)}</td>
+                    <td style="font-weight:600; color:${diff >= 0 ? '#0e7a82' : '#d63a5a'};">${diffSign}${fmtPts(diff)}</td>
                     <td>${p.roundsPlayed}</td>
                     <td style="color:#1f9d55; font-weight:600;">${p.wins}</td>
                     <td style="color:#b7860b; font-weight:600;">${p.ties}</td>
@@ -1141,14 +1238,14 @@
                             <span>${m.team1} <strong>(${m.score1})</strong> vs <strong>(${m.score2})</strong> ${m.team2}</span>
                         </div>
                         <div class="history-points-breakdown">
-                            Multiplier ${m.mUsed}x: Team 1 = +${m.wScore1} | Team 2 = +${m.wScore2}
+                            Multiplier ${m.mUsed}x: Team 1 = +${fmtPts(m.wScore1)} | Team 2 = +${fmtPts(m.wScore2)}
                         </div>
                     </div>`;
                 });
 
                 if (r.byesApplied && r.byesApplied.length > 0) {
                     html += `<div style="margin-top: 5px; font-size: 13px; color: var(--text-muted)">
-                        <strong>Rests Awarded:</strong> ${r.byesApplied.map(b => b.name + ' (+' + b.pts + ' via ' + b.calculation + ')').join(', ')}
+                        <strong>Rests Awarded:</strong> ${r.byesApplied.map(b => b.name + ' (+' + fmtPts(b.pts) + ' via ' + b.calculation + ')').join(', ')}
                     </div>`;
                 }
                 
@@ -1293,9 +1390,13 @@
         teamOpponentCount = t.teamOpponentCount || {};
         lastTeamOpponentRound = t.lastTeamOpponentRound || {};
 
+        // Tournaments saved before raw scores were tracked: rebuild them as points minus earlier rest awards.
+        participants.forEach(p => { p.rawPoints = getRawPoints(p, matchHistoryLog); });
+
         launchTournamentScreen();
 
         if (isTournamentFinished) {
+            renderLeaderboard();
             displayTournamentFinishedState();
             switchTab('leaderboard');
         } else {
@@ -1344,15 +1445,15 @@
                 return a.currentBox - b.currentBox;
             }
             if (b.points !== a.points) return b.points - a.points;
-            const diffA = a.points - (a.pointsLost || 0);
-            const diffB = b.points - (b.pointsLost || 0);
+            const diffA = round2(a.points - (a.pointsLost || 0));
+            const diffB = round2(b.points - (b.pointsLost || 0));
             if (diffB !== diffA) return diffB - diffA;
             if (b.wins !== a.wins) return b.wins - a.wins;
             return a.losses - b.losses;
         });
 
         document.getElementById('view-archive-leaderboard').innerHTML = displayList.map((p, idx) => {
-            const diff = p.points - (p.pointsLost || 0);
+            const diff = round2(p.points - (p.pointsLost || 0));
             const diffSign = diff > 0 ? '+' : '';
             const boxBadge = t.format === 'beat-the-box' ? `<span class="badge" style="background:#3b82f6; margin-left:6px;">Box ${p.currentBox || '-'}</span>` : '';
             const isWinner = t.isFinished && idx === 0;
@@ -1360,9 +1461,10 @@
                 <tr style="${isWinner ? 'background: rgba(245, 158, 11, 0.12);' : ''}">
                     <td><strong>${isWinner ? '👑 #1' : `#${idx + 1}`}</strong></td>
                     <td><strong>${p.name}</strong>${boxBadge}</td>
-                    <td style="font-weight:bold; color:var(--accent);">${p.points}</td>
-                    <td style="font-weight:bold; color:#d63a5a;">${p.pointsLost || 0}</td>
-                    <td style="font-weight:600; color:${diff >= 0 ? '#0e7a82' : '#d63a5a'};">${diffSign}${diff}</td>
+                    <td style="font-weight:bold; color:var(--accent);">${fmtPts(p.points)}</td>
+                    <td class="raw-col" title="Points scored in matches at 1.0x. Used only for rest averages.">${fmtPts(getRawPoints(p, t.matchHistory))}</td>
+                    <td style="font-weight:bold; color:#d63a5a;">${fmtPts(p.pointsLost)}</td>
+                    <td style="font-weight:600; color:${diff >= 0 ? '#0e7a82' : '#d63a5a'};">${diffSign}${fmtPts(diff)}</td>
                     <td>${p.roundsPlayed}</td>
                     <td style="color:#1f9d55; font-weight:600;">${p.wins || 0}</td>
                     <td style="color:#b7860b; font-weight:600;">${p.ties || 0}</td>
@@ -1390,14 +1492,14 @@
                         <span>${m.team1} <strong>(${m.score1})</strong> vs <strong>(${m.score2})</strong> ${m.team2}</span>
                     </div>
                     <div class="history-points-breakdown">
-                        Multiplier ${m.mUsed}x: Team 1 = +${m.wScore1} | Team 2 = +${m.wScore2}
+                        Multiplier ${m.mUsed}x: Team 1 = +${fmtPts(m.wScore1)} | Team 2 = +${fmtPts(m.wScore2)}
                     </div>
                 </div>`;
             });
 
             if (r.byesApplied && r.byesApplied.length > 0) {
                 html += `<div style="margin-top: 5px; font-size: 13px; color: var(--text-muted)">
-                    <strong>Rests Awarded:</strong> ${r.byesApplied.map(b => b.name + ' (+' + b.pts + ' via ' + b.calculation + ')').join(', ')}
+                    <strong>Rests Awarded:</strong> ${r.byesApplied.map(b => b.name + ' (+' + fmtPts(b.pts) + ' via ' + b.calculation + ')').join(', ')}
                 </div>`;
             }
             

@@ -40,8 +40,8 @@ export const SCHEMA = [
     player_id     INT  NOT NULL REFERENCES players(id),
     name          TEXT NOT NULL,
     final_rank    INT  NOT NULL,
-    points        INT  NOT NULL DEFAULT 0,
-    points_lost   INT  NOT NULL DEFAULT 0,
+    points        NUMERIC(10,2) NOT NULL DEFAULT 0,
+    points_lost   NUMERIC(10,2) NOT NULL DEFAULT 0,
     played        INT  NOT NULL DEFAULT 0,
     wins          INT  NOT NULL DEFAULT 0,
     ties          INT  NOT NULL DEFAULT 0,
@@ -61,11 +61,31 @@ export const SCHEMA = [
     team2         TEXT    NOT NULL,
     score1        INT     NOT NULL,
     score2        INT     NOT NULL,
-    weighted1     INT     NOT NULL,
-    weighted2     INT     NOT NULL,
+    weighted1     NUMERIC(10,2) NOT NULL,
+    weighted2     NUMERIC(10,2) NOT NULL,
     multiplier    NUMERIC NOT NULL DEFAULT 1,
     PRIMARY KEY (tournament_id, round, court)
   )`,
+
+  // Upgrade for databases created before points had decimals (v1.1): whole-number point
+  // columns become NUMERIC(10,2). Existing values are kept. The view depends on these
+  // columns, so it is dropped here and recreated by the next statement.
+  `DO $$
+   BEGIN
+     IF EXISTS (SELECT 1 FROM information_schema.columns
+                 WHERE table_name = 'tournament_entries' AND column_name = 'points' AND data_type = 'integer') THEN
+       DROP VIEW IF EXISTS player_career_stats;
+       ALTER TABLE tournament_entries
+         ALTER COLUMN points      TYPE NUMERIC(10,2),
+         ALTER COLUMN points_lost TYPE NUMERIC(10,2);
+     END IF;
+     IF EXISTS (SELECT 1 FROM information_schema.columns
+                 WHERE table_name = 'matches' AND column_name = 'weighted1' AND data_type = 'integer') THEN
+       ALTER TABLE matches
+         ALTER COLUMN weighted1 TYPE NUMERIC(10,2),
+         ALTER COLUMN weighted2 TYPE NUMERIC(10,2);
+     END IF;
+   END $$`,
 
   // Career totals per player, ready to query from the Neon SQL editor.
   `CREATE OR REPLACE VIEW player_career_stats AS

@@ -79,6 +79,8 @@ export const isValidId = id => typeof id === 'string' && ID_RE.test(id);
 export const nameKey = s => String(s).trim().replace(/\s+/g, ' ').toLowerCase();
 
 const int = v => (Number.isFinite(Number(v)) ? Math.round(Number(v)) : 0);
+// Points can have decimals because of court multipliers; keep 2 decimal places.
+const pts = v => (Number.isFinite(Number(v)) ? Math.round(Number(v) * 100) / 100 : 0);
 const text = (v, max = 200) => String(v ?? '').trim().slice(0, max);
 
 // Same ordering the app uses for its leaderboard.
@@ -119,7 +121,7 @@ export function normalizeRecord(record) {
     seen.add(key);
     entries.push({
       key, name: text(p.name, 120), rank: i + 1,
-      points: int(p.points), points_lost: int(p.pointsLost), played: int(p.roundsPlayed),
+      points: pts(p.points), points_lost: pts(p.pointsLost), played: int(p.roundsPlayed),
       wins: int(p.wins), ties: int(p.ties), losses: int(p.losses), byes: int(p.byeCount)
     });
   });
@@ -134,7 +136,7 @@ export function normalizeRecord(record) {
       matchSeen.add(k);
       matches.push({
         round: int(round.round), court: int(m.court), team1: text(m.team1, 250), team2: text(m.team2, 250),
-        score1: int(m.score1), score2: int(m.score2), weighted1: int(m.wScore1), weighted2: int(m.wScore2),
+        score1: int(m.score1), score2: int(m.score2), weighted1: pts(m.wScore1), weighted2: pts(m.wScore2),
         multiplier: Number(m.mUsed) || 1
       });
     }

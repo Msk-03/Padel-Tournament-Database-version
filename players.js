@@ -4,8 +4,9 @@
 window.Players = (() => {
     const $ = id => document.getElementById(id);
     const TEAM_FORMATS = ['team-mexicano', 'team-americano', 'beat-the-box'];
-    const ui = { kind: 'player', includeUnfinished: false, query: '', sort: 'titles', dir: -1, open: null };
+    const ui = { kind: 'player', includeUnfinished: false, query: '', sort: 'rank', dir: 1, open: null };
 
+    const round2 = n => Math.round(((Number(n) || 0) + Number.EPSILON) * 100) / 100;
     const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
     const keyOf = s => String(s).trim().replace(/\s+/g, ' ').toLowerCase();
     const ordinal = n => n + (['th', 'st', 'nd', 'rd'][(n % 100 - 20) % 10] || ['th', 'st', 'nd', 'rd'][n % 100] || 'th');
@@ -16,7 +17,7 @@ window.Players = (() => {
         return [...(t.participants || t.players || [])].sort((a, b) => {
             if (t.format === 'beat-the-box' && a.currentBox && b.currentBox && a.currentBox !== b.currentBox) return a.currentBox - b.currentBox;
             if ((b.points || 0) !== (a.points || 0)) return (b.points || 0) - (a.points || 0);
-            const dA = (a.points || 0) - (a.pointsLost || 0), dB = (b.points || 0) - (b.pointsLost || 0);
+            const dA = round2((a.points || 0) - (a.pointsLost || 0)), dB = round2((b.points || 0) - (b.pointsLost || 0));
             if (dB !== dA) return dB - dA;
             if ((b.wins || 0) !== (a.wins || 0)) return (b.wins || 0) - (a.wins || 0);
             return (a.losses || 0) - (b.losses || 0);
@@ -46,7 +47,7 @@ window.Players = (() => {
             });
         }
         const rows = [...people.values()].map(r => {
-            const sum = f => r.events.reduce((n, e) => n + e[f], 0);
+            const sum = f => round2(r.events.reduce((n, e) => n + e[f], 0));
             const wins = sum('wins'), ties = sum('ties'), losses = sum('losses'), decided = wins + ties + losses;
             const fin = r.events.filter(e => e.finished);
             r.events.sort((a, b) => b.date.localeCompare(a.date));
@@ -57,7 +58,7 @@ window.Players = (() => {
                 podiums: fin.filter(e => e.rank <= 3).length,
                 played: sum('played'), wins, ties, losses,
                 winPct: decided ? (100 * wins) / decided : 0,
-                points: sum('points'), diff: sum('points') - sum('lost'),
+                points: sum('points'), diff: round2(sum('points') - sum('lost')),
                 best: fin.length ? Math.min(...fin.map(e => e.rank)) : null
             };
         });
@@ -65,19 +66,28 @@ window.Players = (() => {
     }
 
     const COLS = [
-        ['name', 'Name'], ['tournaments', 'Events'], ['titles', 'Titles'], ['podiums', 'Podiums'],
+        ['rank', '#'], ['name', 'Name'], ['tournaments', 'Events'], ['titles', 'Titles'], ['podiums', 'Podiums'],
         ['played', 'Played'], ['wins', 'W'], ['ties', 'T'], ['losses', 'L'], ['winPct', 'Win %'],
         ['points', 'Pts won'], ['diff', 'Diff']
     ];
-    const TIEBREAK = ['titles', 'podiums', 'winPct', 'wins', 'diff'];
+    // Official order for the table topper: most points, then best win %, then fewest losses,
+    // then most ties, then most titles.
+    function officialOrder(a, b) {
+        return (b.points - a.points) ||
+               (b.winPct - a.winPct) ||
+               (a.losses - b.losses) ||
+               (b.ties - a.ties) ||
+               (b.titles - a.titles) ||
+               a.name.localeCompare(b.name);
+    }
 
     function sortRows(rows) {
+        rows.sort(officialOrder).forEach((r, i) => { r.rank = i + 1; });
         const k = ui.sort, d = ui.dir;
+        if (k === 'rank') return d > 0 ? rows : rows.reverse();
         return rows.sort((a, b) => {
             if (k === 'name') return d * a.name.localeCompare(b.name);
-            if (a[k] !== b[k]) return d * (a[k] - b[k]);
-            for (const t of TIEBREAK) if (a[t] !== b[t]) return b[t] - a[t];
-            return a.name.localeCompare(b.name);
+            return (a[k] !== b[k] ? d * (a[k] - b[k]) : 0) || (a.rank - b.rank);
         });
     }
 
@@ -89,7 +99,7 @@ window.Players = (() => {
                 <span class="pl-event-stats">${e.points} pts · ${e.wins}W ${e.ties}T ${e.losses}L</span>
                 <button class="action-btn btn-view-sm" data-open="${esc(e.id)}">View</button>
             </li>`).join('');
-        return `<tr class="pl-detail"><td colspan="${COLS.length + 1}"><ul class="pl-events">${items}</ul></td></tr>`;
+        return `<tr class="pl-detail"><td colspan="${COLS.length}"><ul class="pl-events">${items}</ul></td></tr>`;
     }
 
     function render() {
@@ -105,20 +115,20 @@ window.Players = (() => {
         const shown = sortRows(rows.filter(r => !q || r.key.includes(q)));
         $('pl-count').textContent = `${rows.length} ${ui.kind === 'team' ? 'team' : 'player'}${rows.length === 1 ? '' : 's'}`;
 
-        $('pl-head').innerHTML = '<th>#</th>' + COLS.map(([k, label]) =>
+        $('pl-head').innerHTML = COLS.map(([k, label]) =>
             `<th><button class="pl-sort ${ui.sort === k ? 'on' : ''}" data-sort="${k}">${label}${ui.sort === k ? (ui.dir < 0 ? ' ▾' : ' ▴') : ''}</button></th>`).join('');
 
         if (!shown.length) {
             const msg = rows.length ? 'No one matches that search.'
                 : (ui.includeUnfinished ? 'No tournaments saved yet. Results appear here as soon as you play.'
                                         : 'No completed tournaments yet. Finish a tournament, or tick “Include unfinished”.');
-            $('pl-body').innerHTML = `<tr><td colspan="${COLS.length + 1}" class="pl-empty">${msg}</td></tr>`;
+            $('pl-body').innerHTML = `<tr><td colspan="${COLS.length}" class="pl-empty">${msg}</td></tr>`;
             return;
         }
-        $('pl-body').innerHTML = shown.map((r, i) => {
+        $('pl-body').innerHTML = shown.map(r => {
             const open = ui.open === r.key;
             return `<tr class="pl-row ${open ? 'open' : ''}" data-key="${esc(r.key)}" tabindex="0" aria-expanded="${open}">
-                <td><strong>${i + 1}</strong></td>
+                <td><strong>${r.rank === 1 ? '👑 ' : ''}${r.rank}</strong></td>
                 <td><strong>${esc(r.name)}</strong></td>
                 <td>${r.tournaments}</td>
                 <td class="pl-titles">${r.titles ? '🏆 ' + r.titles : '0'}</td>
@@ -150,7 +160,7 @@ window.Players = (() => {
             const b = e.target.closest('button[data-sort]');
             if (!b) return;
             const k = b.dataset.sort;
-            ui.dir = ui.sort === k ? -ui.dir : (k === 'name' ? 1 : -1);
+            ui.dir = ui.sort === k ? -ui.dir : (k === 'name' || k === 'rank' ? 1 : -1);
             ui.sort = k;
             render();
         });

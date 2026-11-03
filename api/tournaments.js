@@ -72,7 +72,7 @@ async function save(sql, request) {
                                       played, wins, ties, losses, byes)
       SELECT ${t.id}, p.id, e.name, e.rank, e.points, e.points_lost, e.played, e.wins, e.ties, e.losses, e.byes
         FROM jsonb_to_recordset(${entriesJson}::jsonb)
-             AS e(key text, name text, rank int, points int, points_lost int, played int,
+             AS e(key text, name text, rank int, points numeric, points_lost numeric, played int,
                   wins int, ties int, losses int, byes int)
         JOIN players p ON p.kind = ${kind} AND p.name_key = e.key
        WHERE EXISTS (SELECT 1 FROM tournaments WHERE id = ${t.id} AND updated_at = ${ts}::timestamptz)`,
@@ -85,7 +85,7 @@ async function save(sql, request) {
       SELECT ${t.id}, m.round, m.court, m.team1, m.team2, m.score1, m.score2, m.weighted1, m.weighted2, m.multiplier
         FROM jsonb_to_recordset(${matchesJson}::jsonb)
              AS m(round int, court int, team1 text, team2 text, score1 int, score2 int,
-                  weighted1 int, weighted2 int, multiplier numeric)
+                  weighted1 numeric, weighted2 numeric, multiplier numeric)
        WHERE EXISTS (SELECT 1 FROM tournaments WHERE id = ${t.id} AND updated_at = ${ts}::timestamptz)`
   ]);
 

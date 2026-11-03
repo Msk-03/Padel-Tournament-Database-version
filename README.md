@@ -10,7 +10,7 @@ A free, installable web app for running padel tournaments: Americano, Mexicano, 
 ## Features
 
 - **Six formats**
-  - Super Mexicano (individual, round 3 ×1.1, round 4+ ×1.2 multipliers on top courts)
+  - Super Mexicano (individual; rounds 1–2 flat, then higher courts score more, see below)
   - Standard Mexicano (individual, seeded by rank)
   - Standard Americano (individual, social mix)
   - Team Mexicano (fixed duos, seeded by rank)
@@ -18,14 +18,34 @@ A free, installable web app for running padel tournaments: Americano, Mexicano, 
   - Beat the Box (king of the court, Box 1 to 8 ladder)
 - **1–8 courts**, match targets of 8 / 16 / 20 / 24 / 32 points
 - **Live scoring** with automatic re-ranking after each round and byes handled for you
-- **Leaderboard** with points won/lost, difference, played, W/T/L and byes
+- **Leaderboard** with points won (with multipliers), points at 1.0x, points lost, difference, played, W/T/L and byes
+- **Fair rest points:** from 1.0x scores, a resting player gets the round's base score (total points scored ÷ players who played) if they haven't played yet, (base score + their score) ÷ 2 after one game, or their own average after two or more; then times the multiplier of the court their standing puts them on
 - **Match history** and, for Americano formats, a full upcoming-rounds schedule
 - **Archive:** every tournament auto-saves; resume, review or delete it later
 - **Online database (new):** tournaments sync to Postgres, so the archive is the same on every phone and laptop and survives clearing the browser
-- **Player stats (new):** all-time table of every player and team, with tournaments played, titles, podiums, W/T/L, win %, points and each player's tournament history
+- **Player stats (new):** all-time table of every player and team, ranked by points won, then win %, fewest losses, most ties and titles, with each player's tournament history
 - **Champion celebration** with confetti when a tournament is finished
 - **Responsive UI:** sidebar on desktop, icon rail on tablet, hamburger drawer on phones
 - **PWA:** installable, works offline after the first visit
+
+## Super Mexicano multipliers
+
+Rounds 1–2 are flat 1.0x. From round 3, each court's scores are multiplied by:
+
+| Courts | Court 1 | Court 2 | Court 3 | Court 4 | Court 5 | Court 6 | Court 7 | Court 8 |
+|---|---|---|---|---|---|---|---|---|
+| 1 | 1.0 | | | | | | | |
+| 2 | 1.1 | 1.0 | | | | | | |
+| 3 | 1.2 | 1.1 | 1.0 | | | | | |
+| 4 | 1.225 | 1.15 | 1.075 | 1.0 | | | | |
+| 5 | 1.3 | 1.225 | 1.15 | 1.075 | 1.0 | | | |
+| 6 | 1.3 | 1.24 | 1.18 | 1.12 | 1.06 | 1.0 | | |
+| 7 | 1.3 | 1.25 | 1.2 | 1.15 | 1.1 | 1.05 | 1.0 | |
+| 8 | 1.3 | 1.257 | 1.214 | 1.171 | 1.129 | 1.086 | 1.043 | 1.0 |
+
+The bottom court is always 1.0x; from 5 courts the top court is capped at 1.3x. Change the values in `SUPER_MEXICANO_COURT_MULTIPLIERS` in `app.js`.
+
+Points keep two decimal places (e.g. 9 × 1.225 = 11.03), so multiplied scores and rest points are never rounded to whole numbers.
 
 ## Deploy to Vercel with a free database
 
@@ -78,7 +98,7 @@ GitHub Pages only hosts static files, so the app runs there exactly as before: e
 |---|---|---|
 | `tournaments` | tournament | name, date, format, courts, rounds played, finished, winner, `state` (full app record as JSON) |
 | `players` | player or fixed team | display name; names are matched ignoring case and extra spaces, so "Ali" and "ali " are the same person |
-| `tournament_entries` | player per tournament | final rank, points won/lost, played, wins, ties, losses, byes |
+| `tournament_entries` | player per tournament | final rank, points won/lost (2 decimal places), played, wins, ties, losses, byes |
 | `matches` | match | round, court, both sides, raw and weighted scores, multiplier |
 
 The view `player_career_stats` adds up each player's career. Example queries for the Neon SQL editor:

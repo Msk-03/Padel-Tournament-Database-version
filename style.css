@@ -213,3 +213,6 @@ body.menu-open{overflow:hidden}
 @media (max-width:1179px){.sync-dot{position:absolute;top:8px;right:10px;margin:0}.nav-item #syncLabel{display:none}}
 @media (max-width:759px){.sync-dot{position:static;margin-left:auto}.nav-item #syncLabel{display:inline}}
 @media (max-width:620px){.pl-events{position:sticky;left:0;width:calc(100vw - 86px)}.pl-event{grid-template-columns:1fr auto;gap:4px 10px}.pl-event-name{grid-column:1/-1;order:-1}.pl-event-stats{white-space:normal}}
+
+/* 1.0x points column: for reference only */
+.raw-col{color:var(--text-muted);font-weight:500}

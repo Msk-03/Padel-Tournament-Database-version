@@ -71,7 +71,7 @@
             <div id="format-bubble" class="format-popover hidden"><div class="popover-arrow"></div><div id="format-bubble-text">Individual players rotate partners each round.</div></div>
           </div>
           <select id="tournament-type" onchange="onFormatChange()">
-            <option value="super-mexicano">Super Mexicano (Individual - Rd3 1.1x, Rd4+ 1.2x)</option>
+            <option value="super-mexicano">Super Mexicano (Individual - Rd3+: higher courts score more)</option>
             <option value="mexicano">Standard Mexicano (Individual - Seeded by Rank)</option>
             <option value="americano">Standard Americano (Individual - Social Mix)</option>
             <option value="team-mexicano">Team Mexicano (Fixed Duos - Seeded by Rank)</option>
@@ -129,7 +129,7 @@
             <div id="leaderboard-champion-podium" class="hidden"></div>
             <h2 class="panel-title">Leaderboard standings</h2>
             <div class="table-responsive"><table class="leaderboard-table"><thead><tr>
-              <th>Rank</th><th id="th-name-label">Player / Team</th><th>Pts Won</th><th>Pts Lost</th><th>Diff</th><th>Played</th><th>W</th><th>T</th><th>L</th><th title="Times sat out">Byes</th>
+              <th>Rank</th><th id="th-name-label">Player / Team</th><th>Pts Won</th><th title="Points scored in matches at 1.0x (no multipliers, no rest points). Only used to work out rest averages; not used for ranking.">Pts (1.0x)</th><th>Pts Lost</th><th>Diff</th><th>Played</th><th>W</th><th>T</th><th>L</th><th title="Times sat out">Byes</th>
             </tr></thead><tbody id="leaderboard-body"></tbody></table></div>
           </div>
           <div id="content-history" class="tab-content hidden">
@@ -168,7 +168,7 @@
         <div class="panel">
           <h2 class="panel-title">Current / final standings</h2>
           <div class="table-responsive"><table class="leaderboard-table"><thead><tr>
-            <th>Rank</th><th>Participant</th><th>Pts Won</th><th>Pts Lost</th><th>Diff</th><th>Played</th><th>W</th><th>T</th><th>L</th><th>Byes</th>
+            <th>Rank</th><th>Participant</th><th>Pts Won</th><th title="Points scored in matches at 1.0x (no multipliers, no rest points). Only used to work out rest averages; not used for ranking.">Pts (1.0x)</th><th>Pts Lost</th><th>Diff</th><th>Played</th><th>W</th><th>T</th><th>L</th><th>Byes</th>
           </tr></thead><tbody id="view-archive-leaderboard"></tbody></table></div>
           <h2 class="panel-title gap-top">Match history log</h2>
           <div id="view-archive-history"></div>
@@ -189,7 +189,7 @@
             <label class="pl-check"><input type="checkbox" id="pl-unfinished" /> Include unfinished</label>
           </div>
           <h2 class="panel-title">All-time standings <small class="pl-count" id="pl-count"></small></h2>
-          <p class="helper-text">Career totals across every saved tournament. Titles and podiums count completed tournaments only. Tap a name to see their tournament history.</p>
+          <p class="helper-text">Ranked by points won, then win %, then fewest losses, then most ties, then titles. Titles and podiums count completed tournaments only. Tap a name to see their tournament history.</p>
           <div class="table-responsive"><table class="leaderboard-table pl-table">
             <thead><tr id="pl-head"></tr></thead><tbody id="pl-body"></tbody>
           </table></div>
