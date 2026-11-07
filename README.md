@@ -53,15 +53,16 @@ Points are kept exact (e.g. 9 × 1.225 = 11.025) in the app and the database, an
 
 No multipliers, and nobody ever partners the same player twice in a row.
 
-1. **Rounds 1–2, Americano mix:** random courts, then new partners and (as far as possible) new opponents. This builds the first leaderboard.
+1. **Rounds 1–2, pure Americano:** the standings play no part. Random courts, then new partners and (as far as possible) new opponents; round-2 courts never line up with blocks of the standings, and rest ties are broken at random. This builds the first leaderboard.
 2. **Round 3 onwards, normal rounds:** players are ranked by the leaderboard. Extra players (up to 3: 8–11 players on 2 courts, 12–15 on 3) rest in turn: nobody rests again until everyone else has rested, and never twice in a row. The others go onto courts by rank, 4 per court, with the most balanced pairing that avoids repeating a partner (1&4 v 2&3, then 1&3 v 2&4, then 1&2 v 3&4). Rest points use the usual formula.
 3. **Challenge trigger:** the leaderboard is split into one group per court, extras in the lower groups (10 players on 2 courts: places 1–5 and 6–10; 11 players: 1–5 and 6–11). If any group keeps the same core players for **2 rounds in a row**: 4 of 4, 4 of 5, or 5 of 6, shuffles inside the group don't matter, the next round is a challenge round. Resting players count in their group, so with extra players the courts can look different even though the group stayed the same. Needs 2+ courts; at least 2 normal rounds between challenges.
 4. **Challenge rounds:** players are ranked by **Actual pts** frozen at the start of the challenge. Strongest partners weakest (1&8 v 2&7, 3&6 v 4&5), and every player gets a different partner and different opponents from the previous challenge round (e.g. 1&7 v 3&5, 2&8 v 4&6). Challenge points go on the leaderboard (Pts Won) straight away.
-   - **Length:** at least 1 round, or 2 with extra players (so everyone plays one). After that the challenge ends if the leaderboard has moved by at least 2 places since it started; otherwise another challenge round is played, up to 3 in total.
+   - **Pairing:** two strong players never partner; strongest with weakest is preferred (1&8, then 1&7, 1&6…), avoiding every teammate and opponent from earlier rounds of the same challenge.
+   - **Length:** at least 1 round, or 2 with extra players (so everyone plays one). After that the challenge continues until **every court's leaderboard group has changed**: at least one promotion or demotion in each group since it started (with 2 courts, one swap between the groups is enough). Safety limit: 4 challenge rounds.
    - **Rest points:** sitters in the first challenge round are paid later with the score they make in the next challenge round; later sitters get the average of their own challenge scores so far. If the tournament is finished before a waiting player has played, they get the last challenge round's average.
 5. **Actual pts column (Hybrid tables):** points from matches actually played, never rest points. It stays frozen for the whole challenge and updates when normal rounds resume. Pts Won (matches + rest points) decides the standings and the winner. Other formats show **Pts (1.0x)** instead.
 
-Settings in `app.js`: `HYBRID_AMERICANO_ROUNDS`, `HYBRID_STABLE_ROUNDS_TO_TRIGGER`, `HYBRID_MAX_EXTRA_PLAYERS`, `HYBRID_MAX_CHALLENGE_ROUNDS`, `HYBRID_RANK_SHIFT_TO_END`.
+Settings in `app.js`: `HYBRID_AMERICANO_ROUNDS`, `HYBRID_STABLE_ROUNDS_TO_TRIGGER`, `HYBRID_MAX_EXTRA_PLAYERS`, `HYBRID_MAX_CHALLENGE_ROUNDS`.
 
 ## Deploy to Vercel with a free database
 

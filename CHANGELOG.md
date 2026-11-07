@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.3.8 – 2026-11-07
+
+- Hybrid challenges now end once every court's leaderboard group has changed (at least one promotion or demotion in each group), instead of needing 3 players to move. With 2 courts one swap is enough.
+- Challenge safety limit is now 4 rounds for every court count.
+
+## 1.3.7 – 2026-11-07
+
+- Hybrid challenges now continue until 3 players have moved to a different leaderboard group (promoted or demoted), not just shuffled inside their groups. Minimum 1 round (2 with extra players); safety limit = rounds that still give everyone a new teammate (4 with 2 courts, 6 with 3+).
+- Challenge pairing never partners two strong players, prefers strongest with weakest, and avoids every teammate and opponent from earlier rounds of the same challenge.
+- Fixed: Hybrid round 2 was partly Mexicano (lowest-ranked players always rested; courts could line up with the standings). Rounds 1–2 now ignore the standings completely.
+
 ## 1.3.6 – 2026-11-07
 
 - Hybrid **Actual pts** = points from matches actually played (rest points never count). It is frozen for the whole challenge and updates when normal rounds resume.

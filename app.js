@@ -818,9 +818,11 @@
                    bottom half, strongest with weakest (1&8 v 2&7, 3&6 v 4&5); every player gets a
                    different partner and different opponents from the previous challenge round.
                    Length: at least 1 challenge round (2 with extra players, so everyone plays one);
-                   after that it ends once the leaderboard has moved by HYBRID_RANK_SHIFT_TO_END+
-                   places since the challenge started, otherwise another one is played, up to
-                   HYBRID_MAX_CHALLENGE_ROUNDS.
+                   after that it ends once EVERY leaderboard group has changed since the challenge
+                   started (at least one player promoted into or demoted out of each court's group);
+                   otherwise another one is played, up to HYBRID_MAX_CHALLENGE_ROUNDS (4).
+                   Pairing never puts two strong players together, prefers strongest with weakest,
+                   and avoids every teammate and opponent from earlier rounds of the same challenge.
                    Rest points: sitters in the first challenge round are paid later (the score they
                    make in the next challenge round); sitters in the second get the score they made
                    in the first. Then normal rounds resume with the full totals.
@@ -829,8 +831,8 @@
     const HYBRID_AMERICANO_ROUNDS = 2;
     const HYBRID_STABLE_ROUNDS_TO_TRIGGER = 2;
     const HYBRID_MAX_EXTRA_PLAYERS = 3;
-    const HYBRID_MAX_CHALLENGE_ROUNDS = 3;     // a challenge never runs longer than this
-    const HYBRID_RANK_SHIFT_TO_END = 2;        // leaderboard places that must change to end it early
+    const HYBRID_MAX_CHALLENGE_ROUNDS = 4;     // safety limit (e.g. if every game is a draw, no group changes)
+    const hybridChallengeLimit = () => HYBRID_MAX_CHALLENGE_ROUNDS;
 
     function newHybridState() {
         return {
@@ -839,7 +841,9 @@
             cores: null,            // per leaderboard group: ids still together since the baseline
             streaks: null,          // per group: rounds the core has stayed together
             snapshot: null,         // ranking by Actual pts (ids), frozen for challenge pairing
-            snapshotTotal: null,    // leaderboard (Pts Won) order when the challenge started
+            groupsAtStart: null,    // leaderboard groups (ids) when the challenge started
+            phasePartners: {},      // name -> partners in this challenge so far
+            phaseOpponents: {},     // name -> opponents in this challenge so far
             challengeRound: 0,      // challenge rounds completed in this challenge phase
             challengePlayed: [],    // ids who have played a challenge match in this phase
             challengeScores: {},    // id -> [{ won, lost }] own 1.0x scores in this phase's challenge matches
@@ -930,10 +934,14 @@
         return () => (s = (s * 16807) % 2147483647) / 2147483647;
     }
 
-    // Americano mix: try many shuffles, keep the one with no repeated partners and fewest repeated opponents.
+    // Americano mix: try many shuffles, keep the one with no repeated partners, fewest repeated opponents,
+    // and no court that lines up with a block of the standings (that would be Mexicano seeding).
     function hybridMixedMatches(active) {
         const rnd = seededRandom(currentRound * 7919 + active.length * 104729 + (tournamentId ? tournamentId.length : 0));
         const lastOpp = hybridState.lastOpponents || {};
+        const byRank = rankForSeeding(active).map(p => p.id);
+        const rankBlocks = new Set();
+        if (matchHistoryLog.length) for (let c = 0; c + 4 <= byRank.length; c += 4) rankBlocks.add(byRank.slice(c, c + 4).sort((a, b) => a - b).join(','));
         let best = null;
         for (let attempt = 0; attempt < 3000; attempt++) {
             const order = active.slice();
@@ -943,6 +951,7 @@
             let score = 0;
             courts.forEach(([a, b, c, d]) => {
                 score += hybridLastPartnerRepeats([[a, b], [c, d]]) * 1000 + hybridPairUses([[a, b], [c, d]]) * 50;
+                if (rankBlocks.has([a.id, b.id, c.id, d.id].sort((x, y) => x - y).join(','))) score += 40;
                 [[a, c], [a, d], [b, c], [b, d]].forEach(([x, y]) => { if ((lastOpp[x.name] || []).includes(y.name)) score += 10; });
             });
             if (!best || score < best.score) best = { courts, score };
@@ -980,6 +989,9 @@
         const strong = active.slice(0, half);
         const weakAsc = active.slice(half).reverse();      // weakest first
         const prev = hybridState.prevChallenge || { partners: {}, opponents: {} };
+        const inPhase = hybridState.challengeRound > 0;
+        const phaseP = inPhase ? (hybridState.phasePartners || {}) : {};
+        const phaseO = inPhase ? (hybridState.phaseOpponents || {}) : {};
         const last = hybridState.lastPartner || {};
         const splits = courtSplits(half);
         const perms = [];
@@ -996,6 +1008,7 @@
             pairs.forEach(([x, y]) => {
                 if (last[x.name] === y.name) pairScore += 1000;
                 if (prev.partners[x.name] === y.name) pairScore += 300;
+                if ((phaseP[x.name] || []).includes(y.name)) pairScore += 300;   // teammate earlier in this challenge
                 pairScore += Math.abs(rankOf.get(x.id) + rankOf.get(y.id) - ideal);
             });
             if (best && pairScore >= best.score) continue;
@@ -1003,7 +1016,10 @@
                 let score = pairScore;
                 split.forEach(([i, j]) => {
                     const A = pairs[i], B = pairs[j];
-                    A.forEach(x => B.forEach(y => { if ((prev.opponents[x.name] || []).includes(y.name)) score += 100; }));
+                    A.forEach(x => B.forEach(y => {
+                        if ((prev.opponents[x.name] || []).includes(y.name)) score += 100;
+                        score += 60 * (phaseO[x.name] || []).filter(n => n === y.name).length;   // opponent earlier in this challenge
+                    }));
                     score += Math.abs((rankOf.get(A[0].id) + rankOf.get(A[1].id)) - (rankOf.get(B[0].id) + rankOf.get(B[1].id)));
                 });
                 if (!best || score < best.score) best = { score, pairs, split };
@@ -1030,7 +1046,12 @@
 
         if (currentRound <= HYBRID_AMERICANO_ROUNDS) {
             st.roundType = 'americano';
-            sittingOutThisRound = pickResters(rankIdx, false);
+            // Pure Americano: the standings play no part. Rest ties are broken at random, not by rank.
+            const rnd = seededRandom(currentRound * 4813 + participants.length * 7 + (tournamentId ? tournamentId.length * 131 : 0));
+            const shuffled = participants.slice();
+            for (let i = shuffled.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]]; }
+            const randomIdx = new Map(shuffled.map((p, i) => [p.id, i]));
+            sittingOutThisRound = pickResters(randomIdx, false);
             const out = new Set(sittingOutThisRound.map(p => p.id));
             roundActiveMatches = hybridMixedMatches(participants.filter(p => !out.has(p.id)));
             return;
@@ -1105,6 +1126,8 @@
 
         if (st.roundType === 'challenge') {
             st.prevChallenge = { partners: roundPartners, opponents: roundOpponents };
+            Object.entries(roundPartners).forEach(([me, mate]) => { (st.phasePartners[me] = st.phasePartners[me] || []).push(mate); });
+            Object.entries(roundOpponents).forEach(([me, opp]) => { st.phaseOpponents[me] = [...(st.phaseOpponents[me] || []), ...opp]; });
             Object.entries(ownScores).forEach(([id, sc]) => { (st.challengeScores[id] = st.challengeScores[id] || []).push(sc); });
             st.challengePlayed = [...new Set([...st.challengePlayed, ...Object.keys(ownScores).map(Number)])];
             // Pay last challenge round's sitters with the score they just made.
@@ -1122,11 +1145,10 @@
             st.challengeRound++;
             const everyonePlayed = participants.every(p => st.challengePlayed.includes(p.id));
             const minRounds = participants.length > totalCourts * 4 ? 2 : 1;
-            const nowTotal = rankForSeeding().map(p => p.id);
-            const shifted = (st.snapshotTotal || nowTotal).filter((id, i) => nowTotal[i] !== id).length;
-            st.lastShift = shifted;
-            const doneEarly = st.challengeRound >= minRounds && everyonePlayed && shifted >= HYBRID_RANK_SHIFT_TO_END;
-            if (doneEarly || st.challengeRound >= HYBRID_MAX_CHALLENGE_ROUNDS) {
+            const changed = hybridGroupsChanged();
+            st.lastGroupsChanged = changed;
+            const doneEarly = st.challengeRound >= minRounds && everyonePlayed && changed === totalCourts;
+            if (doneEarly || st.challengeRound >= hybridChallengeLimit()) {
                 hybridSettlePending(log.byesApplied);
                 st.phase = 'normal';
                 st.frozenPoints = null;              // Actual pts now include both challenge rounds' match points
@@ -1158,13 +1180,24 @@
         if (trigger && totalCourts > 1) {
             st.phase = 'challenge';
             st.snapshot = rankByActual().map(p => p.id);
-            st.snapshotTotal = rankForSeeding().map(p => p.id);
+            st.groupsAtStart = hybridGroups(rankForSeeding().map(p => p.id));
+            st.phasePartners = {};
+            st.phaseOpponents = {};
             st.frozenPoints = Object.fromEntries(participants.map(p => [p.id, getRawPoints(p)]));
             st.challengeRound = 0;
             st.challengePlayed = [];
             st.challengeScores = {};
             st.pendingRest = [];
         }
+    }
+
+    // How many leaderboard groups have changed since the challenge started: a group has changed when at
+    // least one of its players was promoted or demoted (someone left it and someone else came in).
+    function hybridGroupsChanged() {
+        const start = hybridState.groupsAtStart;
+        if (!start) return 0;
+        const now = hybridGroups(rankForSeeding().map(p => p.id));
+        return now.filter((g, i) => !start[i] || g.some(id => !start[i].includes(id))).length;
     }
 
     function hybridResetTrigger() {
@@ -1182,8 +1215,8 @@
                 return `Americano mix (round ${currentRound} of ${HYBRID_AMERICANO_ROUNDS}): mixed courts and new partners to build the first leaderboard. No multipliers.`;
             }
             if (st.roundType === 'challenge') {
-                const minRounds = participants.length > totalCourts * 4 ? 2 : 1;
-                return `Challenge round ${(st.challengeRound || 0) + 1} of ${minRounds}–${HYBRID_MAX_CHALLENGE_ROUNDS}: strongest partners weakest, using Actual pts frozen at the start of the challenge. New partners and opponents for everyone. Normal rounds return after ${minRounds === 2 ? '2 rounds' : '1 round'} if the leaderboard has moved by ${HYBRID_RANK_SHIFT_TO_END}+ places, otherwise after up to ${HYBRID_MAX_CHALLENGE_ROUNDS}.`;
+                const progress = st.challengeRound > 0 ? ` So far ${st.lastGroupsChanged || 0} of ${totalCourts} groups have changed.` : '';
+                return `Challenge round ${(st.challengeRound || 0) + 1}: strong players partner weak ones (strongest with weakest first), ranked by Actual pts frozen at the start of the challenge, with new teammates and opponents. Challenges continue until every court's leaderboard group has had at least one promotion or demotion.${progress}`;
             }
             return "Hybrid: courts seeded by rank, no multipliers, and nobody partners the same player twice in a row.";
         }
