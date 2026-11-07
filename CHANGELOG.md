@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.3.9 – 2026-11-08
+
+- Player stats: the # column now numbers rows 1, 2, 3… in whatever order the table is sorted (e.g. by Win %). The 👑 stays next to the overall leader's name, also while searching.
+
 ## 1.3.8 – 2026-11-07
 
 - Hybrid challenges now end once every court's leaderboard group has changed (at least one promotion or demotion in each group), instead of needing 3 players to move. With 2 courts one swap is enough.

@@ -88,10 +88,10 @@ window.Players = (() => {
                a.name.localeCompare(b.name);
     }
 
+    // r.rank (overall rank, used for the crown) is set on the full list before any search filter.
     function sortRows(rows) {
-        rows.sort(officialOrder).forEach((r, i) => { r.rank = i + 1; });
         const k = ui.sort, d = ui.dir;
-        if (k === 'rank') return d > 0 ? rows : rows.reverse();
+        if (k === 'rank') return rows.sort((a, b) => d * (a.rank - b.rank));
         return rows.sort((a, b) => {
             if (k === 'name') return d * a.name.localeCompare(b.name);
             return (a[k] !== b[k] ? d * (a[k] - b[k]) : 0) || (a.rank - b.rank);
@@ -118,6 +118,7 @@ window.Players = (() => {
         if (kindsSeen.size === 1 && !kindsSeen.has(ui.kind)) { ui.kind = [...kindsSeen][0]; return render(); }
         document.querySelectorAll('#pl-kind button').forEach(b => b.classList.toggle('active', b.dataset.kind === ui.kind));
 
+        rows.slice().sort(officialOrder).forEach((r, i) => { r.rank = i + 1; });
         const q = keyOf(ui.query);
         const shown = sortRows(rows.filter(r => !q || r.key.includes(q)));
         $('pl-count').textContent = `${rows.length} ${ui.kind === 'team' ? 'team' : 'player'}${rows.length === 1 ? '' : 's'}`;
@@ -132,11 +133,11 @@ window.Players = (() => {
             $('pl-body').innerHTML = `<tr><td colspan="${COLS.length}" class="pl-empty">${msg}</td></tr>`;
             return;
         }
-        $('pl-body').innerHTML = shown.map(r => {
+        $('pl-body').innerHTML = shown.map((r, i) => {
             const open = ui.open === r.key;
             return `<tr class="pl-row ${open ? 'open' : ''}" data-key="${esc(r.key)}" tabindex="0" aria-expanded="${open}">
-                <td><strong>${r.rank === 1 ? '👑 ' : ''}${r.rank}</strong></td>
-                <td><strong>${esc(r.name)}</strong></td>
+                <td><strong>${i + 1}</strong></td>
+                <td><strong>${r.rank === 1 ? '👑 ' : ''}${esc(r.name)}</strong></td>
                 <td title="1.0x points ÷ matches played"><strong>${r.avg.toFixed(1)}</strong></td>
                 <td><strong>${r.winPct.toFixed(0)}%</strong></td>
                 <td class="pl-titles">${r.titles ? '🏆 ' + r.titles : '0'}</td>
