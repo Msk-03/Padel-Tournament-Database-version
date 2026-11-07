@@ -9,13 +9,14 @@ A free, installable web app for running padel tournaments: Americano, Mexicano, 
 
 ## Features
 
-- **Six formats**
+- **Seven formats**
   - Super Mexicano (individual; rounds 1–2 flat, then higher courts score more, see below)
   - Standard Mexicano (individual, seeded by rank)
   - Standard Americano (individual, social mix)
   - Team Mexicano (fixed duos, seeded by rank)
   - Team Americano (fixed duos, social mix)
   - Beat the Box (king of the court, Box 1 to 8 ladder)
+  - Hybrid (Mexicano seeding, a new partner every match, challenge rounds, no multipliers; see below)
 - **1–8 courts**, match targets of 8 / 16 / 20 / 24 / 32 points
 - **Live scoring** with automatic re-ranking after each round and byes handled for you
 - **Leaderboard** with points won (with multipliers), points at 1.0x, points lost, difference, played, W/T/L and byes
@@ -23,7 +24,8 @@ A free, installable web app for running padel tournaments: Americano, Mexicano, 
 - **Match history** and, for Americano formats, a full upcoming-rounds schedule
 - **Archive:** every tournament auto-saves; resume, review or delete it later
 - **Online database (new):** tournaments sync to Postgres, so the archive is the same on every phone and laptop and survives clearing the browser
-- **Player stats (new):** all-time table of every player and team, ranked by points won, then win %, fewest losses, most ties and titles, with each player's tournament history
+- **Player stats:** all-time table of every player and team, ranked by average points per match (1.0x points ÷ matches played), then win %, then titles, with each player's tournament history
+- **Record past tournaments:** add an old tournament from its final table (points won/lost, W/T/L per player); it goes into the archive, the database and Player stats
 - **Champion celebration** with confetti when a tournament is finished
 - **Responsive UI:** sidebar on desktop, icon rail on tablet, hamburger drawer on phones
 - **PWA:** installable, works offline after the first visit
@@ -46,6 +48,17 @@ Rounds 1–2 are flat 1.0x. From round 3, each court's scores are multiplied by:
 The bottom court is always 1.0x; from 5 courts the top court is capped at 1.3x. Change the values in `SUPER_MEXICANO_COURT_MULTIPLIERS` in `app.js`.
 
 Points are kept exact (e.g. 9 × 1.225 = 11.025) in the app and the database, and every calculation and ranking uses the exact values. Screens show whole numbers rounded to the nearest (14.8 → 15, 15.3 → 15); hover over a points value to see the exact figure.
+
+## Hybrid mode
+
+No multipliers, and nobody ever partners the same player twice in a row.
+
+1. **Rounds 1–2, Americano mix:** random courts, then new partners and (as far as possible) new opponents. This builds the first leaderboard.
+2. **Round 3 onwards, normal rounds:** players are ranked by the leaderboard. Extra players (up to 3: 8–11 players on 2 courts, 12–15 on 3) rest in turn: nobody rests again until everyone else has rested, and never twice in a row. The others go onto courts by rank, 4 per court, with the most balanced pairing that avoids repeating a partner (1&4 v 2&3, then 1&3 v 2&4, then 1&2 v 3&4). Rest points use the usual formula.
+3. **Challenge trigger:** the leaderboard is split into one group per court, extras in the lower groups (10 players on 2 courts: 1–5 and 6–10). If a group keeps the same core players for **2 rounds in a row** (4 players for a group of 4–5, 5 for a group of 6+), shuffles inside the group don't matter, the next round is a challenge round. Needs 2+ courts.
+4. **Challenge rounds:** pairing uses the standings frozen just before the challenge (challenge points still go on the leaderboard straight away). Strongest partners weakest (1&8 v 2&7, 3&6 v 4&5), and every player gets a different partner and different opponents from the previous challenge round (e.g. 1&7 v 3&5, 2&8 v 4&6). With extra players a second challenge round is played so everyone plays one. Rest points: sitters in the first challenge round are paid later with the score they make in the next challenge round; sitters in the second get the score they made in the first. Then normal rounds resume using the full totals.
+
+Settings in `app.js`: `HYBRID_AMERICANO_ROUNDS`, `HYBRID_STABLE_ROUNDS_TO_TRIGGER`, `HYBRID_MAX_EXTRA_PLAYERS`.
 
 ## Deploy to Vercel with a free database
 
@@ -138,6 +151,7 @@ style.css               Layout, theme and responsive rules
 app.js                  Tournament engine: scheduling, scoring, ranking, archive
 cloud.js                Storage on the device + sync with the online database
 players.js              Player stats screen
+record.js               Record a past tournament (final table entry)
 ui.js                   Shell: navigation, mobile drawer, summary tiles, sync status, PWA install
 sw.js                   Service worker (offline support)
 manifest.json           PWA manifest

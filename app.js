@@ -34,6 +34,7 @@
     let teamOpponentCount = {};
     let lastTeamOpponentRound = {};
     let fullPrecomputedSchedule = [];
+    let hybridState = null;   // Hybrid mode only: phase, last court groups, challenge progress, last partners
 
     let currentlyViewingArchiveId = null;
 
@@ -68,6 +69,7 @@
             case 'team-mexicano': return 'Team Mexicano';
             case 'team-americano': return 'Team Americano';
             case 'beat-the-box': return 'Beat the Box';
+            case 'hybrid': return 'Hybrid';
             default: return 'Padel Tournament';
         }
     }
@@ -150,7 +152,8 @@
         const isTeam = isTeamFormat(fmt);
 
         const minRequired = isTeam ? (courtCount * 2) : (courtCount * 4);
-        const maxRange = isTeam ? 16 : 32;
+        // Hybrid: 4 or 5 players per court (the 5th rests in turn), so at most 5 per court.
+        const maxRange = fmt === 'hybrid' ? courtCount * 4 + 3 : (isTeam ? 16 : 32);
 
         let currentVal = desiredCount !== null ? desiredCount : parseInt(countSelect.value);
         if (isNaN(currentVal) || currentVal < minRequired) {
@@ -256,7 +259,12 @@
             pLabel.innerText = "Enter Player Names";
             countLabel.innerText = "Number of Players";
             pHint.innerText = `Requires at least ${courtCount * 4} individual players (${courtCount} courts × 4 players). Press Enter to advance.`;
-            fDesc.innerText = fmt === 'super-mexicano'
+            if (fmt === 'hybrid') {
+                pHint.innerText = `Hybrid: ${courtCount * 4}–${courtCount * 4 + 3} players for ${courtCount} court(s). Extra players rest in turn (nobody rests again until everyone has rested). Press Enter to advance.`;
+            }
+            fDesc.innerText = fmt === 'hybrid'
+                ? "Hybrid: 2 Americano rounds to build the leaderboard, then Mexicano seeding with no multipliers. You never partner the same player twice in a row. If the same players stay together in a leaderboard group for 2 rounds, everyone plays a challenge round (strongest with weakest: 1&8 vs 2&7, 3&6 vs 4&5)."
+                : fmt === 'super-mexicano'
                 ? "Individual Super Mexicano: Rotating partners. Rounds 1-2 flat 1.0x; from round 3 higher courts score more (2 courts: 1.1/1.0, 3 courts: 1.2/1.1/1.0, 4 courts: 1.225/1.15/1.075/1.0 ...). One court = no multipliers."
                 : (fmt === 'mexicano' 
                     ? "Individual Mexicano: Rotating partners. Seeded by rank with flat 1.0x scoring." 
@@ -274,6 +282,8 @@
         
         if (isTeamFormat(fmt)) {
             pHint.innerText = `Requires at least ${courtCount * 2} teams (2 teams per court) for ${courtCount} court(s). Press Enter to advance.`;
+        } else if (fmt === 'hybrid') {
+            pHint.innerText = `Hybrid: ${courtCount * 4}–${courtCount * 4 + 3} players for ${courtCount} court(s). Extra players rest in turn (nobody rests again until everyone has rested). Press Enter to advance.`;
         } else {
             pHint.innerText = `Requires at least ${courtCount * 4} individual players (${courtCount} courts × 4 players). Press Enter to advance.`;
         }
@@ -330,6 +340,7 @@
             lastPartnerRound: lastPartnerRound,
             teamOpponentCount: teamOpponentCount,
             lastTeamOpponentRound: lastTeamOpponentRound,
+            hybridState: hybridState,
             updatedAt: new Date().toISOString()
         };
 
@@ -532,6 +543,14 @@
             alert(`Configuration requires at least ${minRequired} ${unit} for ${totalCourts} court(s)!`);
             return;
         }
+        if (format === 'hybrid' && names.length > totalCourts * 4 + 3) {
+            alert(`Hybrid allows up to 3 extra players: ${totalCourts * 4}–${totalCourts * 4 + 3} players for ${totalCourts} court(s).`);
+            return;
+        }
+        if (new Set(names.map(n => n.toLowerCase())).size !== names.length) {
+            alert("Every player or team needs a different name.");
+            return;
+        }
 
         participants = names.map((name, idx) => ({ 
             id: idx,
@@ -556,6 +575,7 @@
         matchHistoryLog = [];
         currentRound = 1;
         beatTheBoxPositions = {};
+        hybridState = format === 'hybrid' ? newHybridState() : null;
 
         participants.sort(() => Math.random() - 0.5);
 
@@ -754,18 +774,368 @@
         return scored[0].opt;
     }
 
-    function generateRound() {
-        if (isTournamentFinished) return;
+    /* ===================== HYBRID MODE =====================
+       Rounds 1–2  AMERICANO MIX: random courts, new partners and (as far as possible) new
+                   opponents in round 2. Builds the first leaderboard.
+       Round 3+    NORMAL: rank by leaderboard; extra players (up to 3) rest by fair rotation
+                   (nobody rests again until everyone else has rested; never twice in a row);
+                   the rest are seeded onto courts by rank, 4 per court; on each court the most
+                   balanced pairing in which nobody repeats their last partner (1&4 v 2&3,
+                   1&3 v 2&4, 1&2 v 3&4).
+       TRIGGER     The leaderboard is split into one group per court (extras in the lower groups:
+                   10 players on 2 courts = 1–5 and 6–10). If a group keeps the same core players
+                   (4 of a group of 4–5, 5 of a group of 6+) for 2 rounds in a row, the next round
+                   is a CHALLENGE. Needs 2+ courts; also means 2+ normal rounds between challenges.
+       CHALLENGE   Pairing uses the standings frozen just before the challenge. Top half partners
+                   bottom half, strongest with weakest (1&8 v 2&7, 3&6 v 4&5); every player gets a
+                   different partner and different opponents from the previous challenge round.
+                   With extra players a second challenge round is played so everyone plays one.
+                   Rest points: sitters in the first challenge round are paid later (the score they
+                   make in the next challenge round); sitters in the second get the score they made
+                   in the first. Then normal rounds resume with the full totals.
+       No multipliers. Normal/Americano rest points use the usual formula. */
 
-        const maxAmericanoRounds = calculateTotalAmericanoRounds();
-        let americanoInfoExtra = "";
-        if (format === 'americano' || format === 'team-americano') {
-            americanoInfoExtra = ` (Round ${currentRound} of ${maxAmericanoRounds})`;
+    const HYBRID_AMERICANO_ROUNDS = 2;
+    const HYBRID_STABLE_ROUNDS_TO_TRIGGER = 2;
+    const HYBRID_MAX_EXTRA_PLAYERS = 3;
+
+    function newHybridState() {
+        return {
+            phase: 'normal',        // 'normal' or 'challenge': what round 3+ will be
+            roundType: 'americano', // type of the round currently on court
+            cores: null,            // per leaderboard group: ids still together since the baseline
+            streaks: null,          // per group: rounds the core has stayed together
+            snapshot: null,         // ranking (ids) frozen for challenge pairing
+            challengeRound: 0,      // challenge rounds completed in this challenge phase
+            challengePlayed: [],    // ids who have played a challenge match in this phase
+            challengeScores: {},    // id -> [{ won, lost }] own 1.0x scores in this phase's challenge matches
+            pendingRest: [],        // ids who sat the first challenge round, paid after the next one
+            prevChallenge: null,    // { partners, opponents } of the most recent challenge round
+            lastPartner: {},        // name -> partner in their last match
+            lastOpponents: {}       // name -> opponents in their last match
+        };
+    }
+
+    function rankForSeeding(list = participants) {
+        return [...list].sort((a, b) => {
+            if (b.points !== a.points) return b.points - a.points;
+            const diffA = exactPts(a.points - a.pointsLost);
+            const diffB = exactPts(b.points - b.pointsLost);
+            if (diffB !== diffA) return diffB - diffA;
+            return b.wins - a.wins;
+        });
+    }
+
+    // Leaderboard groups for the challenge trigger: 4 per court, extras added from the bottom group up.
+    function hybridGroupSizes(n, courts) {
+        const sizes = Array(courts).fill(4);
+        let extra = Math.max(0, n - courts * 4), c = courts - 1;
+        while (extra > 0) { sizes[c]++; extra--; c = c === 0 ? courts - 1 : c - 1; }
+        return sizes;
+    }
+    const hybridCoreNeeded = size => (size <= 5 ? 4 : size - 1);
+
+    function hybridGroups(rankedIds) {
+        const out = [];
+        let i = 0;
+        hybridGroupSizes(rankedIds.length, totalCourts).forEach(size => { out.push(rankedIds.slice(i, i + size)); i += size; });
+        return out;
+    }
+
+    // Who rests first: fewest rests so far; did not rest last round; rested longest ago; lowest rank.
+    // In a challenge phase, players who have already played a challenge match sit first.
+    function hybridRestOrder(rankIdx, challenge) {
+        const played = new Set((hybridState && hybridState.challengePlayed) || []);
+        return (a, b) => {
+            if (challenge) {
+                const pA = played.has(a.id) ? 0 : 1, pB = played.has(b.id) ? 0 : 1;
+                if (pA !== pB) return pA - pB;
+            }
+            if ((a.byeCount || 0) !== (b.byeCount || 0)) return (a.byeCount || 0) - (b.byeCount || 0);
+            const lastA = a.lastByeRound === currentRound - 1 ? 1 : 0, lastB = b.lastByeRound === currentRound - 1 ? 1 : 0;
+            if (lastA !== lastB) return lastA - lastB;
+            if ((a.lastByeRound ?? -999) !== (b.lastByeRound ?? -999)) return (a.lastByeRound ?? -999) - (b.lastByeRound ?? -999);
+            return rankIdx.get(b.id) - rankIdx.get(a.id);
+        };
+    }
+
+    function pickResters(rankIdx, challenge) {
+        const count = Math.max(0, participants.length - totalCourts * 4);
+        return [...participants].sort(hybridRestOrder(rankIdx, challenge)).slice(0, count);
+    }
+
+    const hybridLastPartnerRepeats = pairs => {
+        const last = hybridState.lastPartner || {};
+        return pairs.reduce((n, [x, y]) => n + ((last[x.name] === y.name || last[y.name] === x.name) ? 1 : 0), 0);
+    };
+    const hybridPairUses = pairs => pairs.reduce((n, [x, y]) => n + (partnerCountMatrix[[x.name, y.name].sort().join(':::')] || 0), 0);
+
+    // Four players in rank order → most balanced pairing without repeating anyone's last partner.
+    function chooseHybridPairing(four) {
+        const [a, b, c, d] = four;
+        const options = [[[a, d], [b, c]], [[a, c], [b, d]], [[a, b], [c, d]]];
+        let best = null;
+        options.forEach((pairs, order) => {
+            const score = hybridLastPartnerRepeats(pairs) * 1000 + hybridPairUses(pairs) * 10 + order;
+            if (!best || score < best.score) best = { pairs, score };
+        });
+        return best.pairs;
+    }
+
+    // Small deterministic random generator so a round can be rebuilt identically when tested.
+    function seededRandom(seed) {
+        let s = seed % 2147483647; if (s <= 0) s += 2147483646;
+        return () => (s = (s * 16807) % 2147483647) / 2147483647;
+    }
+
+    // Americano mix: try many shuffles, keep the one with no repeated partners and fewest repeated opponents.
+    function hybridMixedMatches(active) {
+        const rnd = seededRandom(currentRound * 7919 + active.length * 104729 + (tournamentId ? tournamentId.length : 0));
+        const lastOpp = hybridState.lastOpponents || {};
+        let best = null;
+        for (let attempt = 0; attempt < 3000; attempt++) {
+            const order = active.slice();
+            if (attempt > 0 || currentRound > 1) for (let i = order.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); [order[i], order[j]] = [order[j], order[i]]; }
+            const courts = [];
+            for (let c = 0; c < totalCourts; c++) courts.push(order.slice(c * 4, c * 4 + 4));
+            let score = 0;
+            courts.forEach(([a, b, c, d]) => {
+                score += hybridLastPartnerRepeats([[a, b], [c, d]]) * 1000 + hybridPairUses([[a, b], [c, d]]) * 50;
+                [[a, c], [a, d], [b, c], [b, d]].forEach(([x, y]) => { if ((lastOpp[x.name] || []).includes(y.name)) score += 10; });
+            });
+            if (!best || score < best.score) best = { courts, score };
+            if (score === 0) break;
+        }
+        return best.courts.map(([a, b, c, d], i) => ({ courtNum: i + 1, p1: a.name, p2: b.name, p3: c.name, p4: d.name, mixed: true }));
+    }
+
+    // All orderings of 0..n-1 in lexicographic order (identity first). n ≤ 6 here (≤ 720).
+    function permutations(n) {
+        const out = [];
+        (function rec(prefix, rest) {
+            if (!rest.length) { out.push(prefix); return; }
+            rest.forEach((x, i) => rec([...prefix, x], rest.filter((_, j) => j !== i)));
+        })([], [...Array(n).keys()]);
+        return out;
+    }
+
+    // All ways to split m pairs into courts (adjacent first: (0,1)(2,3) before (0,2)(1,3)).
+    function courtSplits(m) {
+        const out = [];
+        (function rec(left, acc) {
+            if (!left.length) { out.push(acc.slice()); return; }
+            const [first, ...rest] = left;
+            rest.forEach((other, i) => rec(rest.filter((_, j) => j !== i), [...acc, [first, other]]));
+        })([...Array(m).keys()], []);
+        return out;
+    }
+
+    // Challenge pairing on the frozen standings. Scores every strong+weak option and keeps the best:
+    // repeats of last partner / previous challenge partner or opponents cost most, then imbalance.
+    function chooseChallengeMatches(active) {
+        const n = active.length, half = n / 2, ideal = n + 1;
+        const rankOf = new Map(active.map((p, i) => [p.id, i + 1]));
+        const strong = active.slice(0, half);
+        const weakAsc = active.slice(half).reverse();      // weakest first
+        const prev = hybridState.prevChallenge || { partners: {}, opponents: {} };
+        const last = hybridState.lastPartner || {};
+        const splits = courtSplits(half);
+        const perms = [];
+        if (half <= 6) perms.push(...permutations(half));
+        else {
+            perms.push([...Array(half).keys()]);
+            const rnd = seededRandom(currentRound * 31337 + n);
+            for (let k = 0; k < 4000; k++) { const p = [...Array(half).keys()]; for (let i = half - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); [p[i], p[j]] = [p[j], p[i]]; } perms.push(p); }
+        }
+        let best = null;
+        for (const perm of perms) {
+            const pairs = strong.map((s, i) => [s, weakAsc[perm[i]]]);
+            let pairScore = 0;
+            pairs.forEach(([x, y]) => {
+                if (last[x.name] === y.name) pairScore += 1000;
+                if (prev.partners[x.name] === y.name) pairScore += 300;
+                pairScore += Math.abs(rankOf.get(x.id) + rankOf.get(y.id) - ideal);
+            });
+            if (best && pairScore >= best.score) continue;
+            for (const split of splits) {
+                let score = pairScore;
+                split.forEach(([i, j]) => {
+                    const A = pairs[i], B = pairs[j];
+                    A.forEach(x => B.forEach(y => { if ((prev.opponents[x.name] || []).includes(y.name)) score += 100; }));
+                    score += Math.abs((rankOf.get(A[0].id) + rankOf.get(A[1].id)) - (rankOf.get(B[0].id) + rankOf.get(B[1].id)));
+                });
+                if (!best || score < best.score) best = { score, pairs, split };
+            }
+        }
+        const courts = best.split.map(([i, j]) => [best.pairs[i], best.pairs[j]])
+            .sort((c1, c2) => Math.min(...c1.flat().map(p => rankOf.get(p.id))) - Math.min(...c2.flat().map(p => rankOf.get(p.id))));
+        return courts.map(([A, B], c) => {
+            const [hiA, loA] = rankOf.get(A[0].id) < rankOf.get(A[1].id) ? A : [A[1], A[0]];
+            const [hiB, loB] = rankOf.get(B[0].id) < rankOf.get(B[1].id) ? B : [B[1], B[0]];
+            const first = rankOf.get(hiA.id) < rankOf.get(hiB.id);
+            const [X, Y] = first ? [[hiA, loA], [hiB, loB]] : [[hiB, loB], [hiA, loA]];
+            return { courtNum: c + 1, p1: X[0].name, p2: X[1].name, p3: Y[0].name, p4: Y[1].name, challenge: true };
+        });
+    }
+
+    function buildHybridRound() {
+        if (!hybridState) hybridState = newHybridState();
+        const st = hybridState;
+        const ranked = rankForSeeding();
+        const rankIdx = new Map(ranked.map((p, i) => [p.id, i]));
+        roundActiveMatches = [];
+        sittingOutThisRound = [];
+
+        if (currentRound <= HYBRID_AMERICANO_ROUNDS) {
+            st.roundType = 'americano';
+            sittingOutThisRound = pickResters(rankIdx, false);
+            const out = new Set(sittingOutThisRound.map(p => p.id));
+            roundActiveMatches = hybridMixedMatches(participants.filter(p => !out.has(p.id)));
+            return;
         }
 
-        document.getElementById('round-title').innerText = 'Round ' + currentRound;
-        
+        if (st.phase === 'challenge') {
+            st.roundType = 'challenge';
+            const frozen = new Map((st.snapshot || ranked.map(p => p.id)).map((id, i) => [id, i]));
+            sittingOutThisRound = pickResters(frozen, true);
+            const out = new Set(sittingOutThisRound.map(p => p.id));
+            const active = participants.filter(p => !out.has(p.id)).sort((a, b) => frozen.get(a.id) - frozen.get(b.id));
+            roundActiveMatches = chooseChallengeMatches(active);
+            return;
+        }
+
+        st.roundType = 'normal';
+        sittingOutThisRound = pickResters(rankIdx, false);
+        const out = new Set(sittingOutThisRound.map(p => p.id));
+        const active = ranked.filter(p => !out.has(p.id));
+        for (let c = 0; c < totalCourts; c++) {
+            const [A, B] = chooseHybridPairing(active.slice(c * 4, c * 4 + 4));
+            roundActiveMatches.push({ courtNum: c + 1, p1: A[0].name, p2: A[1].name, p3: B[0].name, p4: B[1].name });
+        }
+    }
+
+    // Rest award for someone sitting a challenge round (returns null for "paid after the next challenge round").
+    function hybridChallengeRestAward(p) {
+        const own = (hybridState.challengeScores || {})[p.id] || [];
+        if (!own.length) return null;
+        const won = own.reduce((n, s) => n + s.won, 0) / own.length;
+        const lost = own.reduce((n, s) => n + s.lost, 0) / own.length;
+        return { awarded: exactPts(won), conceded: exactPts(lost), note: `own challenge score ${Math.round(won * 100) / 100} pts` };
+    }
+
+    // Pay anyone still waiting (e.g. the tournament ends between the two challenge rounds):
+    // they get the average score of the last challenge round.
+    function hybridSettlePending(log) {
+        const st = hybridState;
+        if (!st || !st.pendingRest.length) return;
+        const last = [...matchHistoryLog].reverse().find(r => r.type === 'challenge');
+        const avg = last && last.matches.length ? last.matches.reduce((n, m) => n + m.score1 + m.score2, 0) / (2 * last.matches.length) : maxPoints / 2;
+        st.pendingRest.forEach(id => {
+            const p = participants.find(x => x.id === id);
+            if (!p) return;
+            p.points = exactPts(p.points + avg);
+            p.pointsLost = exactPts(p.pointsLost + Math.max(0, maxPoints - avg));
+            (log || (last && last.byesApplied) || []).push({ name: p.name, pts: exactPts(avg), calculation: 'challenge round average (no second challenge round played)' });
+        });
+        st.pendingRest = [];
+    }
+
+    // After a round is scored: remember partners/opponents, pay deferred challenge rests, move between phases.
+    function hybridAfterRound() {
+        const st = hybridState;
+        if (!st) return;
+        const log = matchHistoryLog[matchHistoryLog.length - 1];
+        const roundPartners = {}, roundOpponents = {};
+        const ownScores = {};   // id -> { won, lost } at 1.0x
+        roundActiveMatches.forEach((m, i) => {
+            const lm = log.matches[i];
+            const sides = [[m.p1, m.p2, lm.score1, lm.score2], [m.p3, m.p4, lm.score2, lm.score1]];
+            sides.forEach(([x, y, won, lost], s) => {
+                const opp = s === 0 ? [m.p3, m.p4] : [m.p1, m.p2];
+                [[x, y], [y, x]].forEach(([me, mate]) => {
+                    st.lastPartner[me] = mate; roundPartners[me] = mate;
+                    st.lastOpponents[me] = opp; roundOpponents[me] = opp;
+                    const p = participants.find(q => q.name === me);
+                    if (p) ownScores[p.id] = { won, lost };
+                });
+            });
+        });
+
+        if (st.roundType === 'challenge') {
+            st.prevChallenge = { partners: roundPartners, opponents: roundOpponents };
+            Object.entries(ownScores).forEach(([id, sc]) => { (st.challengeScores[id] = st.challengeScores[id] || []).push(sc); });
+            st.challengePlayed = [...new Set([...st.challengePlayed, ...Object.keys(ownScores).map(Number)])];
+            // Pay last challenge round's sitters with the score they just made.
+            st.pendingRest = st.pendingRest.filter(id => {
+                const sc = ownScores[id];
+                if (!sc) return true;
+                const p = participants.find(x => x.id === id);
+                p.points = exactPts(p.points + sc.won);
+                p.pointsLost = exactPts(p.pointsLost + sc.lost);
+                log.byesApplied.push({ name: p.name, pts: sc.won, calculation: `rest in the previous challenge round, paid with own challenge score ${sc.won} pts` });
+                return false;
+            });
+            // Sitters of this round who have no challenge score yet are paid after the next one.
+            sittingOutThisRound.forEach(s => { if (!st.challengeScores[s.id] && !st.pendingRest.includes(s.id)) st.pendingRest.push(s.id); });
+            st.challengeRound++;
+            const everyonePlayed = participants.every(p => st.challengePlayed.includes(p.id));
+            if (everyonePlayed || st.challengeRound >= 3) {
+                hybridSettlePending(log.byesApplied);
+                st.phase = 'normal';
+                hybridResetTrigger();                // fresh baseline from the full totals
+            }
+            return;
+        }
+
+        if (st.roundType === 'americano') {
+            if (currentRound >= HYBRID_AMERICANO_ROUNDS) hybridResetTrigger();
+            return;
+        }
+
+        // Normal round: has any leaderboard group kept its core players?
+        const groups = hybridGroups(rankForSeeding().map(p => p.id));
+        if (!st.cores || st.cores.length !== groups.length) { hybridResetTrigger(); return; }
+        let trigger = false;
+        groups.forEach((g, i) => {
+            const core = st.cores[i].filter(id => g.includes(id));
+            if (core.length >= hybridCoreNeeded(g.length)) {
+                st.cores[i] = core;
+                st.streaks[i]++;
+                if (st.streaks[i] >= HYBRID_STABLE_ROUNDS_TO_TRIGGER) trigger = true;
+            } else {
+                st.cores[i] = g.slice();
+                st.streaks[i] = 0;
+            }
+        });
+        if (trigger && totalCourts > 1) {
+            st.phase = 'challenge';
+            st.snapshot = rankForSeeding().map(p => p.id);
+            st.challengeRound = 0;
+            st.challengePlayed = [];
+            st.challengeScores = {};
+            st.pendingRest = [];
+        }
+    }
+
+    function hybridResetTrigger() {
+        const groups = hybridGroups(rankForSeeding().map(p => p.id));
+        hybridState.cores = groups.map(g => g.slice());
+        hybridState.streaks = groups.map(() => 0);
+    }
+
+    // One-line description of the current round shown above the courts.
+    function roundInfoText(americanoInfoExtra = "") {
         let infoStr = "";
+        if (format === 'hybrid') {
+            const st = hybridState || {};
+            if (st.roundType === 'americano') {
+                return `Americano mix (round ${currentRound} of ${HYBRID_AMERICANO_ROUNDS}): mixed courts and new partners to build the first leaderboard. No multipliers.`;
+            }
+            if (st.roundType === 'challenge') {
+                return `Challenge round ${(st.challengeRound || 0) + 1}: strongest partners weakest, using the standings from before the challenge. New partners and opponents for everyone. Normal rounds return once every player has played a challenge match.`;
+            }
+            return "Hybrid: courts seeded by rank, no multipliers, and nobody partners the same player twice in a row.";
+        }
         if (format === 'super-mexicano' && totalCourts < 2) {
             infoStr = "Single court: no multipliers, every match counts 1.0x.";
         } else if (format === 'super-mexicano') {
@@ -782,9 +1152,34 @@
         } else if (format === 'beat-the-box') {
             infoStr = "Beat the Box: Box 1 is the Top Court. Match winners move UP (towards Box 1), losers move DOWN!";
         }
-        document.getElementById('multiplier-info').innerText = infoStr;
+        return infoStr;
+    }
+
+    function generateRound() {
+        if (isTournamentFinished) return;
+
+        const maxAmericanoRounds = calculateTotalAmericanoRounds();
+        let americanoInfoExtra = "";
+        if (format === 'americano' || format === 'team-americano') {
+            americanoInfoExtra = ` (Round ${currentRound} of ${maxAmericanoRounds})`;
+        }
+
+        document.getElementById('round-title').innerText = 'Round ' + currentRound;
+
+        // Hybrid: build the round first so the info line can say whether it is a challenge round.
+        if (format === 'hybrid') {
+            buildHybridRound();
+            document.getElementById('multiplier-info').innerText = roundInfoText();
+            renderRoundLayout();
+            renderLeaderboard();
+            appendHistoryView();
+            return;
+        }
+
+        document.getElementById('multiplier-info').innerText = roundInfoText(americanoInfoExtra);
 
         const isTeam = isTeamFormat();
+
 
         // Load precomputed pairings for Americano formats (guaranteeing zero repeats)
         if ((format === 'team-americano' || format === 'americano') && fullPrecomputedSchedule.length >= currentRound) {
@@ -908,6 +1303,8 @@
                 label = getCourtMultiplier(match.courtNum) + 'x Multiplier';
             } else if (format === 'beat-the-box') {
                 label = match.courtNum === 1 ? '👑 Top Box 1' : `Box ${match.courtNum}`;
+            } else if (format === 'hybrid') {
+                label = match.challenge ? '⚡ Challenge' : (match.mixed ? 'Americano mix' : 'No multiplier');
             }
 
             const team1Display = isTeam ? `<span><strong>${match.p1}</strong></span>` : `<span>${match.p1}</span><span>${match.p2}</span>`;
@@ -934,12 +1331,14 @@
             const unit = isTeam ? "Team(s)" : "Player(s)";
             const restLines = sittingOutThisRound.map(s => {
                 const p = participants.find(x => x.id === s.id) || s;
-                const a = computeByeAward(p);
-                return `${p.name} <small style="color:var(--text-muted)">(${a.awarded === null ? '' : '+' + a.awarded + ': '}${a.note})</small>`;
+                const a = (format === 'hybrid' && hybridState && hybridState.roundType === 'challenge')
+                    ? (hybridChallengeRestAward(p) || { awarded: null, note: 'paid after the next challenge round: own challenge score' })
+                    : computeByeAward(p);
+                return `${p.name} <small style="color:var(--text-muted)">(${a.awarded === null ? '' : '+' + fmtPts(a.awarded) + ': '}${a.note})</small>`;
             }).join(', ');
             html += `<div class="bye-list">
                 <strong>Resting This Round (${unit} on Bye):</strong> ${restLines}<br>
-                <small style="color:var(--text-muted)">Guaranteed to play next round. Rest points (1.0x scores): no games yet = this round's base score (total points scored ÷ players who played); 1 game = (base score + their score) ÷ 2; 2+ games = their average. Then times the multiplier of the court their current standing puts them on.</small>
+                <small style="color:var(--text-muted)">Guaranteed to play next round. Rest points (1.0x scores): no games yet = this round's base score (total points scored ÷ players who played); 1 game = (base score + their score) ÷ 2; 2+ games = their average.${format === 'super-mexicano' ? ' Then times the multiplier of the court their current standing puts them on.' : ''}</small>
             </div>`;
         }
 
@@ -973,6 +1372,7 @@
     }
 
     function triggerTournamentFinish(isAutoCompleted = false) {
+        if (format === 'hybrid') hybridSettlePending();
         isTournamentFinished = true;
         autoSaveCurrentTournament();
         renderLeaderboard();
@@ -1069,9 +1469,15 @@
             parseInt(document.getElementById('score-' + i + '-t2').value)
         ]);
         const roundBase = computeRoundBaseScore(roundScores);
+        const hybridChallenge = format === 'hybrid' && hybridState && hybridState.roundType === 'challenge';
         const byeAwards = sittingOutThisRound.map(s => {
             const original = participants.find(x => x.id === s.id);
-            return { original, award: original ? computeByeAward(original, roundBase) : null };
+            if (!original) return { original, award: null };
+            if (hybridChallenge) {
+                const a = hybridChallengeRestAward(original);
+                return { original, award: a || { awarded: 0, conceded: 0, note: 'paid after the next challenge round (own challenge score)', deferred: true } };
+            }
+            return { original, award: computeByeAward(original, roundBase) };
         });
 
         roundActiveMatches.forEach((match, i) => {
@@ -1160,7 +1566,11 @@
             });
         });
 
+        if (format === 'hybrid' && hybridState) {
+            roundLogItem.type = hybridState.roundType;
+        }
         matchHistoryLog.push(roundLogItem);
+        if (format === 'hybrid') hybridAfterRound();
 
         // Check if Americano formats have completed their full round-robin
         const maxAmericanoRounds = calculateTotalAmericanoRounds();
@@ -1237,7 +1647,7 @@
             let html = '';
             [...matchHistoryLog].reverse().forEach(r => {
                 html += `<div class="history-item">
-                    <div class="history-round-title">Round ${r.round} Results</div>`;
+                    <div class="history-round-title">Round ${r.round} Results${r.type === 'challenge' ? ' · ⚡ Challenge round' : r.type === 'americano' ? ' · Americano mix' : ''}</div>`;
                 
                 r.matches.forEach(m => {
                     html += `<div style="margin-bottom: 8px; border-bottom: 1px solid rgba(15,128,137,.18); padding-bottom: 4px;">
@@ -1348,17 +1758,18 @@
             const roundsPlayed = t.totalRoundsPlayed !== undefined ? t.totalRoundsPlayed : (t.totalRounds || 0);
             const currentRnd = t.currentRound || (roundsPlayed + 1);
             const unit = isTeamFormat(t.format) ? "Teams" : "Players";
-            const statusBadge = t.isFinished ? `<span class="badge" style="background:#1f9d55;">Completed</span>` : `<span class="badge-status">Rd ${currentRnd}</span>`;
+            const statusBadge = t.recorded ? `<span class="badge" style="background:#6b7c93;">Recorded</span>`
+                : (t.isFinished ? `<span class="badge" style="background:#1f9d55;">Completed</span>` : `<span class="badge-status">Rd ${currentRnd}</span>`);
             return `
                 <div class="archive-card">
                     <div class="archive-info">
                         <h4>${t.name} ${statusBadge} <span class="badge-winner">Winner: ${t.winner || 'None'}</span>${t._synced ? ' <span class="badge-cloud" title="Saved in the online database">☁ Saved online</span>' : ''}</h4>
                         <div class="archive-meta">
-                            📅 ${t.date} &nbsp;|&nbsp; 🎾 ${t.format.toUpperCase().replace(/-/g, ' ')} &nbsp;|&nbsp; 🏅 ${roundsPlayed} Completed Rounds &nbsp;|&nbsp; 👥 ${t.participants ? t.participants.length : (t.players ? t.players.length : 0)} ${unit} &nbsp;|&nbsp; 🏟️ ${t.totalCourts} Courts
+                            📅 ${t.date} &nbsp;|&nbsp; 🎾 ${t.format.toUpperCase().replace(/-/g, ' ')} &nbsp;|&nbsp; 🏅 ${t.recorded ? 'Final table only' : roundsPlayed + ' Completed Rounds'} &nbsp;|&nbsp; 👥 ${t.participants ? t.participants.length : (t.players ? t.players.length : 0)} ${unit} &nbsp;|&nbsp; 🏟️ ${t.totalCourts} Courts
                         </div>
                     </div>
                     <div class="archive-actions">
-                        <button class="action-btn btn-resume-sm" onclick="resumeTournamentById('${t.id}')">${t.isFinished ? 'View / Reopen' : 'Resume'}</button>
+                        ${t.recorded ? '' : `<button class="action-btn btn-resume-sm" onclick="resumeTournamentById('${t.id}')">${t.isFinished ? 'View / Reopen' : 'Resume'}</button>`}
                         <button class="action-btn btn-view-sm" onclick="viewTournamentDetails('${t.id}')">View</button>
                         <button class="action-btn btn-delete-sm" onclick="deleteTournamentRecord('${t.id}')">Delete</button>
                     </div>
@@ -1397,6 +1808,7 @@
         lastPartnerRound = t.lastPartnerRound || {};
         teamOpponentCount = t.teamOpponentCount || {};
         lastTeamOpponentRound = t.lastTeamOpponentRound || {};
+        hybridState = format === 'hybrid' ? { ...newHybridState(), ...(t.hybridState || {}) } : null;
 
         // Tournaments saved before raw scores were tracked: rebuild them as points minus earlier rest awards.
         participants.forEach(p => { p.rawPoints = getRawPoints(p, matchHistoryLog); });
@@ -1412,6 +1824,7 @@
                 roundActiveMatches = t.roundActiveMatches;
                 sittingOutThisRound = t.sittingOutThisRound || [];
                 document.getElementById('round-title').innerText = 'Round ' + currentRound;
+                document.getElementById('multiplier-info').innerText = roundInfoText();
                 renderRoundLayout();
                 renderLeaderboard();
             } else {
@@ -1491,7 +1904,7 @@
         let html = '';
         [...t.matchHistory].reverse().forEach(r => {
             html += `<div class="history-item">
-                <div class="history-round-title">Round ${r.round} Results</div>`;
+                <div class="history-round-title">Round ${r.round} Results${r.type === 'challenge' ? ' · ⚡ Challenge round' : r.type === 'americano' ? ' · Americano mix' : ''}</div>`;
             
             r.matches.forEach(m => {
                 html += `<div style="margin-bottom: 8px; border-bottom: 1px solid rgba(15,128,137,.18); padding-bottom: 4px;">

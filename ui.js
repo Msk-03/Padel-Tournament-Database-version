@@ -1,14 +1,15 @@
 /* App shell: navigation, mobile drawer, summary tiles, PWA install. Engine lives in app.js. */
 (() => {
   const $ = id => document.getElementById(id);
-  const SCREENS = ['setup-screen', 'tournament-screen', 'vault-screen', 'archive-view-screen', 'players-screen'];
-  const NAV_OF = { 'setup-screen': 'setup', 'tournament-screen': 'live', 'vault-screen': 'vault', 'archive-view-screen': 'vault', 'players-screen': 'players' };
+  const SCREENS = ['setup-screen', 'tournament-screen', 'vault-screen', 'archive-view-screen', 'players-screen', 'record-screen'];
+  const NAV_OF = { 'setup-screen': 'setup', 'tournament-screen': 'live', 'vault-screen': 'vault', 'archive-view-screen': 'vault', 'players-screen': 'players', 'record-screen': 'record' };
   const TITLES = {
     'setup-screen': ['New tournament', 'Choose a format, courts and players'],
     'tournament-screen': ['Live tournament', () => (typeof tournamentName !== 'undefined' ? tournamentName : '')],
     'vault-screen': ['Archive', 'Resume, review or delete saved tournaments'],
     'archive-view-screen': ['Tournament details', 'Standings and match log'],
-    'players-screen': ['Player stats', 'Career records across every tournament']
+    'players-screen': ['Player stats', 'Career records across every tournament'],
+    'record-screen': ['Record a past tournament', 'Add an old tournament from its final table']
   };
   const sidebar = $('sidebar'), scrim = $('scrim'), menuBtn = $('menuBtn');
   const mobileMQ = window.matchMedia('(max-width: 759px)');
@@ -53,6 +54,7 @@
     if (n === 'setup') showScreen('setup-screen');
     else if (n === 'live') showScreen('tournament-screen');
     else if (n === 'players') { showScreen('players-screen'); Players.render(); }
+    else if (n === 'record') { showScreen('record-screen'); Recorder.open(); }
     else { showScreen('vault-screen'); openVaultScreen(); }
     sync();
     if (mobileMQ.matches) setMenu(false);

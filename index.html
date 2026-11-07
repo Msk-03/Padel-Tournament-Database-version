@@ -42,6 +42,7 @@
         <hr />
         <button class="nav-item" data-nav="vault" title="Archive"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="5" rx="1.5"/><path d="M5 9v9a2 2 0 002 2h10a2 2 0 002-2V9M10 13h4"/></svg><span>Archive</span><b class="nav-badge" id="navArchiveCount">0</b></button>
         <button class="nav-item" data-nav="players" title="Player stats"><svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 19c.6-3.2 2.8-5 5.5-5s4.9 1.8 5.5 5"/><circle cx="17" cy="9" r="2.4"/><path d="M15.8 14.2c2.3-.3 4.2 1.2 4.7 4.3"/></svg><span>Player stats</span></button>
+        <button class="nav-item" data-nav="record" title="Record a past tournament"><svg viewBox="0 0 24 24"><rect x="4" y="3.5" width="16" height="17" rx="2.5"/><path d="M8 8.5h8M8 12.5h8M8 16.5h5"/></svg><span>Record past</span></button>
       </nav>
       <button class="nav-item sync-btn" id="syncBtn" title="Online database"><svg viewBox="0 0 24 24"><path d="M7 18a4.5 4.5 0 01-.6-8.96A6 6 0 0118 9.5a4 4 0 01-.5 8.5z"/></svg><span id="syncLabel">Connecting…</span><i class="sync-dot" id="syncDot" data-tone="idle"></i></button>
       <button class="nav-item install-btn" id="installBtn" hidden title="Install app"><svg viewBox="0 0 24 24"><path d="M12 4v11M7 11l5 5 5-5M5 20h14"/></svg><span>Install app</span></button>
@@ -77,6 +78,7 @@
             <option value="team-mexicano">Team Mexicano (Fixed Duos - Seeded by Rank)</option>
             <option value="team-americano">Team Americano (Fixed Duos - Social Mix)</option>
             <option value="beat-the-box">Beat the Box (King of the Court: Box 1 to 8 Ladder)</option>
+            <option value="hybrid">Hybrid (2 Americano rounds, then Mexicano with challenge rounds)</option>
           </select>
           <div class="form-row">
             <div class="fg"><label for="match-points">Match points</label>
@@ -189,10 +191,40 @@
             <label class="pl-check"><input type="checkbox" id="pl-unfinished" /> Include unfinished</label>
           </div>
           <h2 class="panel-title">All-time standings <small class="pl-count" id="pl-count"></small></h2>
-          <p class="helper-text">Ranked by points won, then win %, then fewest losses, then most ties, then titles. Titles and podiums count completed tournaments only. Tap a name to see their tournament history.</p>
+          <p class="helper-text">Ranked by average points per match (points scored in games at 1.0x ÷ matches played), then win %, then titles. Titles and podiums count completed tournaments only. Tap a name to see their tournament history.</p>
           <div class="table-responsive"><table class="leaderboard-table pl-table">
             <thead><tr id="pl-head"></tr></thead><tbody id="pl-body"></tbody>
           </table></div>
+        </div>
+      </section>
+      <!-- 6. RECORD A PAST TOURNAMENT -->
+      <section class="screen hidden" id="record-screen">
+        <div class="panel">
+          <h2 class="panel-title">Tournament details</h2>
+          <p class="helper-text">Add a tournament that was played before (or on paper) by entering its final table. It goes into the archive and counts in Player stats. It is saved to the online database on devices with the organiser key.</p>
+          <div class="form-row">
+            <div class="fg fg-lg"><label for="rec-name">Name</label><input type="text" id="rec-name" placeholder="e.g. Summer Mexicano"></div>
+            <div class="fg"><label for="rec-date">Date played</label><input type="date" id="rec-date"></div>
+          </div>
+          <label for="rec-format">Format</label>
+          <select id="rec-format"><option value="super-mexicano">Super Mexicano</option><option value="mexicano">Standard Mexicano</option><option value="americano">Standard Americano</option><option value="team-mexicano">Team Mexicano</option><option value="team-americano">Team Americano</option><option value="beat-the-box">Beat the Box</option><option value="hybrid">Hybrid</option></select>
+          <div class="form-row">
+            <div class="fg"><label for="rec-points">Match points</label>
+              <select id="rec-points"><option value="8">8 Points</option><option value="16" selected>16 Points</option><option value="20">20 Points</option><option value="24">24 Points</option><option value="32">32 Points</option></select></div>
+            <div class="fg"><label for="rec-courts">Courts</label><select id="rec-courts"><option value="1">1 Court</option><option value="2" selected>2 Courts</option><option value="3">3 Courts</option><option value="4">4 Courts</option><option value="5">5 Courts</option><option value="6">6 Courts</option><option value="7">7 Courts</option><option value="8">8 Courts</option></select></div>
+            <div class="fg"><label for="rec-count" id="rec-count-label">Number of Players</label><select id="rec-count"></select></div>
+          </div>
+        </div>
+        <div class="panel">
+          <h2 class="panel-title">Final table</h2>
+          <p class="helper-text">Enter each player's totals from the end of the tournament. Played = W + T + L. The order and winner are worked out the same way as the live leaderboard.</p>
+          <div class="table-responsive"><table class="rec-table">
+            <thead><tr><th>#</th><th id="rec-name-head">Player</th><th>Pts won</th><th>Pts lost</th><th>W</th><th>T</th><th>L</th></tr></thead>
+            <tbody id="rec-body"></tbody>
+          </table></div>
+          <h3 class="rec-sub">Standings preview</h3>
+          <div id="rec-preview"></div>
+          <button class="btn" id="rec-save">Save to archive</button>
         </div>
       </section>
     </main>
@@ -217,6 +249,7 @@
 <script src="cloud.js"></script>
 <script src="app.js"></script>
 <script src="players.js"></script>
+<script src="record.js"></script>
 <script src="ui.js"></script>
 </body>
 </html>

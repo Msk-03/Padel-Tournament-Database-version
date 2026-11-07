@@ -71,7 +71,7 @@ export function requireAuth(request) {
 
 /* ---------- record → table rows ---------- */
 
-const FORMATS = new Set(['super-mexicano', 'mexicano', 'americano', 'team-mexicano', 'team-americano', 'beat-the-box']);
+const FORMATS = new Set(['super-mexicano', 'mexicano', 'americano', 'team-mexicano', 'team-americano', 'beat-the-box', 'hybrid']);
 const TEAM_FORMATS = new Set(['team-mexicano', 'team-americano', 'beat-the-box']);
 const ID_RE = /^[A-Za-z0-9_-]{1,80}$/;
 

@@ -35,6 +35,11 @@ window.Players = (() => {
             kindsSeen.add(kind);
             if (kind !== ui.kind || (!t.isFinished && !ui.includeUnfinished)) continue;
             const order = ranked(t), seen = new Set();
+            // 1.0x points: match points with no multipliers and no rest points. Older saves without
+            // rawPoints: total points minus rest awards from the match history.
+            const restPts = name => (t.matchHistory || []).reduce((n, r) =>
+                n + (r.byesApplied || []).filter(b => b.name === name).reduce((m, b) => m + (b.pts || 0), 0), 0);
+            const rawOf = p => (typeof p.rawPoints === 'number' ? p.rawPoints : Math.max(0, (p.points || 0) - restPts(p.name)));
             order.forEach((p, i) => {
                 const key = keyOf(p.name || '');
                 if (!key || seen.has(key)) return;
@@ -44,7 +49,7 @@ window.Players = (() => {
                 if ((t.date || '') >= rec.lastDate) { rec.lastDate = t.date || ''; rec.name = p.name.trim(); }
                 rec.events.push({
                     id: t.id, tName: t.name, date: t.date || '', format: t.format, finished: !!t.isFinished,
-                    rank: i + 1, field: order.length, points: p.points || 0, lost: p.pointsLost || 0,
+                    rank: i + 1, field: order.length, points: p.points || 0, lost: p.pointsLost || 0, raw: rawOf(p),
                     played: p.roundsPlayed || 0, wins: p.wins || 0, ties: p.ties || 0, losses: p.losses || 0
                 });
             });
@@ -61,6 +66,7 @@ window.Players = (() => {
                 podiums: fin.filter(e => e.rank <= 3).length,
                 played: sum('played'), wins, ties, losses,
                 winPct: decided ? (100 * wins) / decided : 0,
+                avg: sum('played') ? exact(sum('raw') / sum('played')) : 0,
                 points: sum('points'), lost: sum('lost'), diff: show(sum('points')) - show(sum('lost')),
                 best: fin.length ? Math.min(...fin.map(e => e.rank)) : null
             };
@@ -69,17 +75,15 @@ window.Players = (() => {
     }
 
     const COLS = [
-        ['rank', '#'], ['name', 'Name'], ['tournaments', 'Events'], ['titles', 'Titles'], ['podiums', 'Podiums'],
-        ['played', 'Played'], ['wins', 'W'], ['ties', 'T'], ['losses', 'L'], ['winPct', 'Win %'],
-        ['points', 'Pts won'], ['diff', 'Diff']
+        ['rank', '#'], ['name', 'Name'], ['avg', 'Avg pts'], ['winPct', 'Win %'], ['titles', 'Titles'],
+        ['tournaments', 'Events'], ['podiums', 'Podiums'], ['played', 'Played'], ['wins', 'W'], ['ties', 'T'],
+        ['losses', 'L'], ['points', 'Pts won'], ['diff', 'Diff']
     ];
-    // Official order for the table topper: most points, then best win %, then fewest losses,
-    // then most ties, then most titles.
+    // Official order, 1st to last: highest average points per match (1.0x points ÷ matches played),
+    // then best win %, then most titles.
     function officialOrder(a, b) {
-        return (b.points - a.points) ||
+        return (b.avg - a.avg) ||
                (b.winPct - a.winPct) ||
-               (a.losses - b.losses) ||
-               (b.ties - a.ties) ||
                (b.titles - a.titles) ||
                a.name.localeCompare(b.name);
     }
@@ -133,14 +137,15 @@ window.Players = (() => {
             return `<tr class="pl-row ${open ? 'open' : ''}" data-key="${esc(r.key)}" tabindex="0" aria-expanded="${open}">
                 <td><strong>${r.rank === 1 ? '👑 ' : ''}${r.rank}</strong></td>
                 <td><strong>${esc(r.name)}</strong></td>
-                <td>${r.tournaments}</td>
+                <td title="1.0x points ÷ matches played"><strong>${r.avg.toFixed(1)}</strong></td>
+                <td><strong>${r.winPct.toFixed(0)}%</strong></td>
                 <td class="pl-titles">${r.titles ? '🏆 ' + r.titles : '0'}</td>
+                <td>${r.tournaments}</td>
                 <td>${r.podiums}</td>
                 <td>${r.played}</td>
                 <td style="color:#1f9d55;font-weight:600">${r.wins}</td>
                 <td style="color:#b7860b;font-weight:600">${r.ties}</td>
                 <td style="color:#d63a3a;font-weight:600">${r.losses}</td>
-                <td><strong>${r.winPct.toFixed(0)}%</strong></td>
                 <td style="font-weight:bold;color:var(--accent)">${cell(r.points)}</td>
                 <td style="font-weight:600;color:${r.diff >= 0 ? '#0e7a82' : '#d63a5a'}">${r.diff > 0 ? '+' : ''}${r.diff}</td>
             </tr>${open ? detailHtml(r) : ''}`;

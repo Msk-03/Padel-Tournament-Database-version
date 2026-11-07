@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.3.2 – 2026-11-07
+
+- Mobile: the Archive → View header (tournament name and the format / date / target / courts line) no longer pushes the page wider than the screen; long text and long names now wrap to the next line on every screen. Checked at 320, 375 and 414 px wide.
+
+## 1.3.1 – 2026-11-07
+
+- Hybrid reworked: 2 Americano rounds first; then extras (up to 3) rest by strict rotation and the rest are seeded 4 per court by rank; challenge rounds trigger when a leaderboard group (1–4/5–8, or 1–5/6–10 with extras) keeps its core players for 2 rounds in a row (5 of 6 for groups of 6).
+- Challenge rounds pair on the standings frozen before the challenge, give everyone new partners and new opponents versus the previous challenge round, and run until every player has played one (2 rounds with extra players). Challenge rest points: first-round sitters are paid later with their own next challenge score; second-round sitters get their first challenge score.
+
+## 1.3.0 – 2026-11-07
+
+- New **Hybrid** format: Mexicano seeding without multipliers; nobody partners the same player twice in a row; 4–5 players per court with one fair rest per 5-player court; challenge rounds (strongest with weakest) when a court keeps the same players two rounds in a row, until the standings move by 2+ places and everyone has played a challenge match (max 3).
+- New **Record past** page: enter an old tournament's details and final table; it is saved to the archive, the database (with the organiser key) and Player stats. Archive shows it as "Recorded".
+- Player stats now rank by average points per match (1.0x points ÷ matches played), then win %, then titles, with a new Avg pts column.
+- Rest points in the round preview now show as whole numbers like everything else.
+
 ## 1.2.5 – 2026-11-03
 
 - Exact points: multiplied scores and rest points are stored with their decimals (4 places) and every calculation, ranking and the winner use the exact values. A total of 14.8 shows as 15, the next round adds to 14.8 (not 15), and 15.3 shows as 15.

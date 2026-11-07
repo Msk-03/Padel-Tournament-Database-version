@@ -216,3 +216,31 @@ body.menu-open{overflow:hidden}
 
 /* 1.0x points column: for reference only */
 .raw-col{color:var(--text-muted);font-weight:500}
+
+/* record a past tournament */
+#record-screen{display:grid;grid-template-columns:minmax(0,1fr);gap:22px}#record-screen .panel{min-width:0}
+.rec-table{width:100%;border-collapse:collapse;font-size:14px}
+.rec-table th{padding:8px 6px;text-align:left;font-size:12px;font-weight:600;color:var(--text-muted);white-space:nowrap}
+.rec-table td{padding:4px 4px}
+.rec-n{width:28px;color:var(--text-muted);font-weight:600;text-align:center}
+.rec-in{width:100%;min-width:62px;height:42px;padding:0 10px;margin:0;border-radius:12px;font-size:14px}
+.rec-in.rec-name{min-width:150px}
+.rec-sub{margin:18px 0 8px;font-size:15px;font-weight:600}
+.rec-winner{margin-bottom:8px;font-size:15px}
+.rec-standings{margin:0 0 16px;padding-left:22px;display:flex;flex-direction:column;gap:4px;font-size:14px}
+.rec-standings li span:last-child{float:right;color:var(--text-muted)}
+@media (max-width:620px){.rec-in{min-width:54px;height:40px;padding:0 8px}.rec-in.rec-name{min-width:120px}}
+
+/* ---- text never widens the page: long lines and long names wrap to the next line ---- */
+.t-head > div{flex:1 1 auto;min-width:0}
+.t-head .t-date{white-space:normal;overflow-wrap:anywhere;line-height:1.5}
+.panel,.t-head,.archive-card,.history-card,.bye-list,.champ-banner,.sync-dialog,.summary{overflow-wrap:anywhere}
+.panel,.archive-card,.history-card{min-width:0}
+.main,.screen{min-width:0;max-width:100%}
+h1,h2,h3,h4,p,label{overflow-wrap:anywhere}
+.archive-card h4{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+.archive-card .badge,.archive-card .badge-status,.archive-card .badge-winner,.archive-card .badge-cloud{margin-left:0}
+@media (max-width:759px){
+  .head-actions .btn,.head-actions button{width:100%}
+  .pl-event-stats{white-space:normal}
+}
