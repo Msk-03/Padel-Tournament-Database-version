@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.3.6 – 2026-11-07
+
+- Hybrid **Actual pts** = points from matches actually played (rest points never count). It is frozen for the whole challenge and updates when normal rounds resume.
+- Challenge pairing ranks players by Actual pts (frozen at the start of the challenge), so rest points can't affect who is strong or weak.
+- Challenge length: at least 1 round (2 with extra players); then it ends once the leaderboard (Pts Won) has moved by 2+ places since the challenge started, otherwise another round is played, up to 3. A third round also gets new partners and opponents.
+
+## 1.3.4 – 2026-11-07
+
+- Hybrid challenge trigger is back to leaderboard groups (as in 1.3.1): one group per court, extras in the lower groups; a challenge starts when any group keeps 4 of 4, 4 of 5 or 5 of 6 of the same players for 2 rounds in a row, whatever the order inside the group. (1.3.3 had switched to same-court repeats; that is undone.)
+
 ## 1.3.2 – 2026-11-07
 
 - Mobile: the Archive → View header (tournament name and the format / date / target / courts line) no longer pushes the page wider than the screen; long text and long names now wrap to the next line on every screen. Checked at 320, 375 and 414 px wide.

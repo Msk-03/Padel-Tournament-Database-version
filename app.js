@@ -676,6 +676,31 @@
         return parts.join(' | ');
     }
 
+    // Hybrid "Actual pts": points from matches actually played (rest points never count). During a
+    // challenge it stays frozen at its value from when the challenge started, so challenge pairing
+    // can't be thrown off; it updates once the last challenge round is scored.
+    function getActualPoints(p, state = hybridState, history = matchHistoryLog) {
+        const frozen = state && state.phase === 'challenge' && state.frozenPoints;
+        return frozen && frozen[p.id] !== undefined ? frozen[p.id] : getRawPoints(p, history);
+    }
+
+    // Third column of the standings tables: "Actual pts" for Hybrid, "Pts (1.0x)" for the other formats.
+    function setThirdColumnHeader(fmt) {
+        document.querySelectorAll('.th-raw').forEach(th => {
+            if (fmt === 'hybrid') {
+                th.textContent = 'Actual pts';
+                th.title = 'Points from matches actually played (no rest points). Used to pair challenge rounds; frozen during a challenge and updated after its last round.';
+            } else {
+                th.textContent = 'Pts (1.0x)';
+                th.title = 'Points scored in matches at 1.0x (no multipliers, no rest points). Only used to work out rest averages; not used for ranking.';
+            }
+        });
+    }
+    function thirdColumnCell(p, fmt, history, state) {
+        if (fmt === 'hybrid') return `<td class="raw-col" title="Match points only (no rest points)">${fmtPts(getActualPoints(p, state, history))}</td>`;
+        return `<td class="raw-col" title="Points scored in matches at 1.0x. Used only for rest averages.">${fmtPts(getRawPoints(p, history))}</td>`;
+    }
+
     // Points scored in matches at 1.0x (no multipliers, no rest awards). Shown in the tables and
     // used only to work out rest averages; standings and the winner use the multiplied points.
     function getRawPoints(p, history = matchHistoryLog) {
@@ -786,10 +811,16 @@
                    10 players on 2 courts = 1–5 and 6–10). If a group keeps the same core players
                    (4 of a group of 4–5, 5 of a group of 6+) for 2 rounds in a row, the next round
                    is a CHALLENGE. Needs 2+ courts; also means 2+ normal rounds between challenges.
-       CHALLENGE   Pairing uses the standings frozen just before the challenge. Top half partners
+       ACTUAL PTS  Points from matches actually played (no rest points of any kind). Shown in the
+                   Hybrid tables and used to rank players for challenge pairing.
+       CHALLENGE   Pairing uses Actual pts, frozen when the challenge starts and updated only after
+                   the last challenge round (round B with extra players). Top half partners
                    bottom half, strongest with weakest (1&8 v 2&7, 3&6 v 4&5); every player gets a
                    different partner and different opponents from the previous challenge round.
-                   With extra players a second challenge round is played so everyone plays one.
+                   Length: at least 1 challenge round (2 with extra players, so everyone plays one);
+                   after that it ends once the leaderboard has moved by HYBRID_RANK_SHIFT_TO_END+
+                   places since the challenge started, otherwise another one is played, up to
+                   HYBRID_MAX_CHALLENGE_ROUNDS.
                    Rest points: sitters in the first challenge round are paid later (the score they
                    make in the next challenge round); sitters in the second get the score they made
                    in the first. Then normal rounds resume with the full totals.
@@ -798,6 +829,8 @@
     const HYBRID_AMERICANO_ROUNDS = 2;
     const HYBRID_STABLE_ROUNDS_TO_TRIGGER = 2;
     const HYBRID_MAX_EXTRA_PLAYERS = 3;
+    const HYBRID_MAX_CHALLENGE_ROUNDS = 3;     // a challenge never runs longer than this
+    const HYBRID_RANK_SHIFT_TO_END = 2;        // leaderboard places that must change to end it early
 
     function newHybridState() {
         return {
@@ -805,12 +838,14 @@
             roundType: 'americano', // type of the round currently on court
             cores: null,            // per leaderboard group: ids still together since the baseline
             streaks: null,          // per group: rounds the core has stayed together
-            snapshot: null,         // ranking (ids) frozen for challenge pairing
+            snapshot: null,         // ranking by Actual pts (ids), frozen for challenge pairing
+            snapshotTotal: null,    // leaderboard (Pts Won) order when the challenge started
             challengeRound: 0,      // challenge rounds completed in this challenge phase
             challengePlayed: [],    // ids who have played a challenge match in this phase
             challengeScores: {},    // id -> [{ won, lost }] own 1.0x scores in this phase's challenge matches
             pendingRest: [],        // ids who sat the first challenge round, paid after the next one
             prevChallenge: null,    // { partners, opponents } of the most recent challenge round
+            frozenPoints: null,     // id -> Actual pts (match points only) frozen at the start of a challenge
             lastPartner: {},        // name -> partner in their last match
             lastOpponents: {}       // name -> opponents in their last match
         };
@@ -824,6 +859,13 @@
             if (diffB !== diffA) return diffB - diffA;
             return b.wins - a.wins;
         });
+    }
+
+    // Ranking used for challenge pairing: Actual pts (match points only), then difference, then wins.
+    function rankByActual() {
+        const won = p => getRawPoints(p), lost = p => (typeof p.rawPointsLost === 'number' ? p.rawPointsLost : p.pointsLost);
+        return [...participants].sort((a, b) =>
+            (won(b) - won(a)) || (exactPts(won(b) - lost(b)) - exactPts(won(a) - lost(a))) || (b.wins - a.wins));
     }
 
     // Leaderboard groups for the challenge trigger: 4 per court, extras added from the bottom group up.
@@ -1079,9 +1121,15 @@
             sittingOutThisRound.forEach(s => { if (!st.challengeScores[s.id] && !st.pendingRest.includes(s.id)) st.pendingRest.push(s.id); });
             st.challengeRound++;
             const everyonePlayed = participants.every(p => st.challengePlayed.includes(p.id));
-            if (everyonePlayed || st.challengeRound >= 3) {
+            const minRounds = participants.length > totalCourts * 4 ? 2 : 1;
+            const nowTotal = rankForSeeding().map(p => p.id);
+            const shifted = (st.snapshotTotal || nowTotal).filter((id, i) => nowTotal[i] !== id).length;
+            st.lastShift = shifted;
+            const doneEarly = st.challengeRound >= minRounds && everyonePlayed && shifted >= HYBRID_RANK_SHIFT_TO_END;
+            if (doneEarly || st.challengeRound >= HYBRID_MAX_CHALLENGE_ROUNDS) {
                 hybridSettlePending(log.byesApplied);
                 st.phase = 'normal';
+                st.frozenPoints = null;              // Actual pts now include both challenge rounds' match points
                 hybridResetTrigger();                // fresh baseline from the full totals
             }
             return;
@@ -1109,7 +1157,9 @@
         });
         if (trigger && totalCourts > 1) {
             st.phase = 'challenge';
-            st.snapshot = rankForSeeding().map(p => p.id);
+            st.snapshot = rankByActual().map(p => p.id);
+            st.snapshotTotal = rankForSeeding().map(p => p.id);
+            st.frozenPoints = Object.fromEntries(participants.map(p => [p.id, getRawPoints(p)]));
             st.challengeRound = 0;
             st.challengePlayed = [];
             st.challengeScores = {};
@@ -1132,7 +1182,8 @@
                 return `Americano mix (round ${currentRound} of ${HYBRID_AMERICANO_ROUNDS}): mixed courts and new partners to build the first leaderboard. No multipliers.`;
             }
             if (st.roundType === 'challenge') {
-                return `Challenge round ${(st.challengeRound || 0) + 1}: strongest partners weakest, using the standings from before the challenge. New partners and opponents for everyone. Normal rounds return once every player has played a challenge match.`;
+                const minRounds = participants.length > totalCourts * 4 ? 2 : 1;
+                return `Challenge round ${(st.challengeRound || 0) + 1} of ${minRounds}–${HYBRID_MAX_CHALLENGE_ROUNDS}: strongest partners weakest, using Actual pts frozen at the start of the challenge. New partners and opponents for everyone. Normal rounds return after ${minRounds === 2 ? '2 rounds' : '1 round'} if the leaderboard has moved by ${HYBRID_RANK_SHIFT_TO_END}+ places, otherwise after up to ${HYBRID_MAX_CHALLENGE_ROUNDS}.`;
             }
             return "Hybrid: courts seeded by rank, no multipliers, and nobody partners the same player twice in a row.";
         }
@@ -1372,7 +1423,7 @@
     }
 
     function triggerTournamentFinish(isAutoCompleted = false) {
-        if (format === 'hybrid') hybridSettlePending();
+        if (format === 'hybrid') { hybridSettlePending(); if (hybridState) hybridState.frozenPoints = null; }
         isTournamentFinished = true;
         autoSaveCurrentTournament();
         renderLeaderboard();
@@ -1599,6 +1650,7 @@
     }
 
     function renderLeaderboard() {
+        setThirdColumnHeader(format);
         let displayList = [...participants].sort((a, b) => {
             if (format === 'beat-the-box') {
                 if (a.currentBox !== b.currentBox) return a.currentBox - b.currentBox;
@@ -1626,7 +1678,7 @@
                     <td><strong>${rankBadge}</strong></td>
                     <td><strong>${p.name}</strong>${boxBadge}</td>
                     <td style="font-weight:bold; color:var(--accent);">${ptsCell(p.points)}</td>
-                    <td class="raw-col" title="Points scored in matches at 1.0x. Used only for rest averages.">${fmtPts(getRawPoints(p))}</td>
+                    ${thirdColumnCell(p, format, matchHistoryLog, hybridState)}
                     <td style="font-weight:bold; color:#d63a5a;">${ptsCell(p.pointsLost)}</td>
                     <td style="font-weight:600; color:${diff >= 0 ? '#0e7a82' : '#d63a5a'};">${diffSign}${diff}</td>
                     <td>${p.roundsPlayed}</td>
@@ -1851,6 +1903,7 @@
     function viewTournamentDetails(id) {
         const list = getSavedTournaments();
         const t = list.find(x => x.id === id);
+        if (t) setThirdColumnHeader(t.format);
         if (!t) return;
 
         currentlyViewingArchiveId = id;
@@ -1883,7 +1936,7 @@
                     <td><strong>${isWinner ? '👑 #1' : `#${idx + 1}`}</strong></td>
                     <td><strong>${p.name}</strong>${boxBadge}</td>
                     <td style="font-weight:bold; color:var(--accent);">${ptsCell(p.points)}</td>
-                    <td class="raw-col" title="Points scored in matches at 1.0x. Used only for rest averages.">${fmtPts(getRawPoints(p, t.matchHistory))}</td>
+                    ${thirdColumnCell(p, t.format, t.matchHistory, t.hybridState)}
                     <td style="font-weight:bold; color:#d63a5a;">${ptsCell(p.pointsLost)}</td>
                     <td style="font-weight:600; color:${diff >= 0 ? '#0e7a82' : '#d63a5a'};">${diffSign}${diff}</td>
                     <td>${p.roundsPlayed}</td>
