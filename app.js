@@ -99,6 +99,15 @@
     // Americano formats end by themselves after the full rotation; once reopened they keep going
     // (extra rounds seeded by standings) until you finish them by hand.
     let playingExtraRounds = false;
+    // Score editing. Before each round is scored, the engine state is copied (roundSnapshots) so a past
+    // round can be corrected: the tournament is replayed from that round with the same pairings.
+    // Rounds up to editLockRound can no longer be edited (the tournament was saved and resumed more
+    // than 15 minutes later, or finished). savedAt: when "Save & exit" was last pressed.
+    let roundSnapshots = [];
+    let editLockRound = 0;
+    let savedAt = null;
+    let editingRound = null;
+    const EDIT_WINDOW_MS = 15 * 60 * 1000;
 
     window.addEventListener('DOMContentLoaded', () => {
         const today = new Date();
@@ -360,6 +369,9 @@
             lastTeamOpponentRound: lastTeamOpponentRound,
             hybridState: hybridState,
             playingExtraRounds: playingExtraRounds,
+            roundSnapshots: roundSnapshots,
+            editLockRound: editLockRound,
+            savedAt: savedAt,
             updatedAt: new Date().toISOString()
         };
 
@@ -542,6 +554,7 @@
 
     function startTournament() {
         playingExtraRounds = false;
+        roundSnapshots = []; editLockRound = 0; savedAt = null; editingRound = null;
         const rawNames = getCurrentInputNames();
         const names = rawNames
             .map(n => cleanParticipantName(n))
@@ -1478,6 +1491,7 @@
     function triggerTournamentFinish(isAutoCompleted = false) {
         if (format === 'hybrid') { hybridSettlePending(); if (hybridState) hybridState.frozenPoints = null; }
         isTournamentFinished = true;
+        lockPlayedRounds();
         autoSaveCurrentTournament();
         renderLeaderboard();
         displayTournamentFinishedState();
@@ -1556,23 +1570,45 @@
     }
 
     function submitRound() {
-        for (let i = 0; i < roundActiveMatches.length; i++) {
-            const t1 = parseInt(document.getElementById('score-' + i + '-t1').value);
-            const t2 = parseInt(document.getElementById('score-' + i + '-t2').value);
-            if (isNaN(t1) || isNaN(t2)) {
-                alert("Please fully enter match scores for all active courts!");
-                return;
-            }
-        }
-
-        let roundLogItem = { round: currentRound, matches: [], byesApplied: [] };
-        const isTeam = isTeamFormat();
-
-        // Rest awards use standings as they were when this round was drawn, so work them out first.
         const roundScores = roundActiveMatches.map((m, i) => [
             parseInt(document.getElementById('score-' + i + '-t1').value),
             parseInt(document.getElementById('score-' + i + '-t2').value)
         ]);
+        if (roundScores.some(([a, b]) => isNaN(a) || isNaN(b))) {
+            alert("Please fully enter match scores for all active courts!");
+            return;
+        }
+        applyRoundScores(roundScores);
+
+        // Check if Americano formats have completed their full round-robin
+        const maxAmericanoRounds = calculateTotalAmericanoRounds();
+        if ((format === 'americano' || format === 'team-americano') && currentRound >= maxAmericanoRounds && !playingExtraRounds) {
+            triggerTournamentFinish(true);
+            return;
+        }
+
+        currentRound++;
+        generateRound();
+        autoSaveCurrentTournament();
+    }
+
+    // Engine state needed to replay the tournament from a given round.
+    function snapshotState() {
+        return JSON.parse(JSON.stringify({
+            currentRound, historyLen: matchHistoryLog.length, participants, hybridState, beatTheBoxPositions,
+            partnerCountMatrix, lastPartnerRound, teamOpponentCount, lastTeamOpponentRound,
+            roundActiveMatches, sittingOutThisRound
+        }));
+    }
+
+    // Scores the round on court (scores: [[team1, team2], ...] in court order) and logs it.
+    function applyRoundScores(roundScores) {
+        roundSnapshots = roundSnapshots.filter(sn => sn.currentRound < currentRound);
+        roundSnapshots.push(snapshotState());
+        let roundLogItem = { round: currentRound, matches: [], byesApplied: [] };
+        const isTeam = isTeamFormat();
+
+        // Rest awards use standings as they were when this round was drawn, so work them out first.
         const roundBase = computeRoundBaseScore(roundScores);
         const hybridChallenge = format === 'hybrid' && hybridState && hybridState.roundType === 'challenge';
         const byeAwards = sittingOutThisRound.map(s => {
@@ -1586,8 +1622,7 @@
         });
 
         roundActiveMatches.forEach((match, i) => {
-            const t1 = parseInt(document.getElementById('score-' + i + '-t1').value);
-            const t2 = parseInt(document.getElementById('score-' + i + '-t2').value);
+            const [t1, t2] = roundScores[i];
 
             const mult = getCourtMultiplier(match.courtNum);
 
@@ -1676,17 +1711,114 @@
         }
         matchHistoryLog.push(roundLogItem);
         if (format === 'hybrid') hybridAfterRound();
+    }
 
-        // Check if Americano formats have completed their full round-robin
-        const maxAmericanoRounds = calculateTotalAmericanoRounds();
-        if ((format === 'americano' || format === 'team-americano') && currentRound >= maxAmericanoRounds && !playingExtraRounds) {
-            triggerTournamentFinish(true);
-            return;
+    // Hybrid: make the challenge state match the type a round was actually played as (used when
+    // replaying after a score edit, where the edited score could otherwise flip a challenge decision).
+    function hybridConform(type) {
+        const st = hybridState;
+        if (!st || !type) return;
+        if (type === 'challenge' && st.phase !== 'challenge') {
+            st.phase = 'challenge';
+            st.snapshot = rankByActual().map(p => p.id);
+            st.groupsAtStart = hybridGroups(rankForSeeding().map(p => p.id));
+            st.phasePartners = {}; st.phaseOpponents = {};
+            st.frozenPoints = Object.fromEntries(participants.map(p => [p.id, getRawPoints(p)]));
+            st.challengeRound = 0; st.challengePlayed = []; st.challengeScores = {}; st.pendingRest = [];
+        } else if (type !== 'challenge' && st.phase === 'challenge') {
+            hybridSettlePending();
+            st.phase = 'normal';
+            st.frozenPoints = null;
+            hybridResetTrigger();
         }
+        st.roundType = type;
+    }
 
-        currentRound++;
-        generateRound();
+    const lastPlayedRound = () => matchHistoryLog.reduce((n, r) => Math.max(n, r.round || 0), 0);
+    function canEditRound(round) {
+        return !isTournamentFinished && round > editLockRound && roundSnapshots.some(sn => sn.currentRound === round);
+    }
+    // Lock every round played so far (scores can no longer be edited) and drop their snapshots.
+    function lockPlayedRounds() {
+        editLockRound = Math.max(editLockRound, lastPlayedRound());
+        roundSnapshots = roundSnapshots.filter(sn => sn.currentRound > editLockRound);
+        editingRound = null;
+    }
+
+    // Correct the scores of a round already played. The tournament is replayed from that round with
+    // the same pairings and rests, so totals, rest points, multipliers and boxes all follow the new
+    // scores. The round on court now keeps its pairings.
+    function editRoundScores(round, newScores) {
+        if (!canEditRound(round)) { alert('The scores of this round are locked.'); return false; }
+        const idx = roundSnapshots.findIndex(sn => sn.currentRound === round);
+        const replay = roundSnapshots.slice(idx).map(sn => JSON.parse(JSON.stringify(sn)));
+        const logs = new Map(matchHistoryLog.map(r => [r.round, r]));
+        const typed = roundActiveMatches.map((m, i) => ['t1', 't2'].map(t => { const el = document.getElementById(`score-${i}-${t}`); return el ? el.value : ''; }));
+        const keep = { currentRound, roundActiveMatches, sittingOutThisRound, type: hybridState ? hybridState.roundType : null };
+
+        const base = replay[0];
+        participants = base.participants;
+        hybridState = base.hybridState;
+        beatTheBoxPositions = base.beatTheBoxPositions || {};
+        partnerCountMatrix = base.partnerCountMatrix || {};
+        lastPartnerRound = base.lastPartnerRound || {};
+        teamOpponentCount = base.teamOpponentCount || {};
+        lastTeamOpponentRound = base.lastTeamOpponentRound || {};
+        matchHistoryLog = matchHistoryLog.slice(0, base.historyLen);
+        roundSnapshots = roundSnapshots.slice(0, idx);
+
+        replay.forEach(sn => {
+            currentRound = sn.currentRound;
+            roundActiveMatches = sn.roundActiveMatches;
+            sittingOutThisRound = sn.sittingOutThisRound || [];
+            if (format === 'hybrid') hybridConform(sn.hybridState && sn.hybridState.roundType);
+            const log = logs.get(sn.currentRound);
+            applyRoundScores(sn.currentRound === round ? newScores : log.matches.map(m => [m.score1, m.score2]));
+        });
+
+        currentRound = keep.currentRound;
+        roundActiveMatches = keep.roundActiveMatches;
+        sittingOutThisRound = keep.sittingOutThisRound;
+        if (format === 'hybrid') hybridConform(keep.type);
+
+        editingRound = null;
+        document.getElementById('round-title').innerText = 'Round ' + currentRound;
+        document.getElementById('multiplier-info').innerText = roundInfoText();
+        renderRoundLayout();
+        typed.forEach(([a, b], i) => {
+            const e1 = document.getElementById(`score-${i}-t1`), e2 = document.getElementById(`score-${i}-t2`);
+            if (e1) e1.value = a; if (e2) e2.value = b;
+        });
+        renderLeaderboard();
+        appendHistoryView();
         autoSaveCurrentTournament();
+        return true;
+    }
+
+    // Match history editor (one round at a time).
+    function startEditRound(round) { if (canEditRound(round)) { editingRound = round; appendHistoryView(); } }
+    function cancelEditRound() { editingRound = null; appendHistoryView(); }
+    function syncEditScores(round, i, team) {
+        const a = document.getElementById(`edit-${round}-${i}-t1`), b = document.getElementById(`edit-${round}-${i}-t2`);
+        const src = team === 1 ? a : b, other = team === 1 ? b : a;
+        let v = parseInt(src.value);
+        if (isNaN(v)) { other.value = ''; return; }
+        v = Math.max(0, Math.min(maxPoints, v));
+        src.value = v;
+        other.value = maxPoints - v;
+    }
+    function saveEditRound(round) {
+        const log = matchHistoryLog.find(r => r.round === round);
+        if (!log) return;
+        const scores = log.matches.map((m, i) => [
+            parseInt(document.getElementById(`edit-${round}-${i}-t1`).value),
+            parseInt(document.getElementById(`edit-${round}-${i}-t2`).value)
+        ]);
+        if (scores.some(([a, b]) => isNaN(a) || isNaN(b))) { alert('Enter both scores for every court.'); return; }
+        if (scores.every(([a, b], i) => a === log.matches[i].score1 && b === log.matches[i].score2)) { cancelEditRound(); return; }
+        const later = lastPlayedRound() > round ? ` Rounds ${round + 1}–${lastPlayedRound()} keep their pairings; points, rest awards and standings are recalculated.` : '';
+        if (!confirm(`Save the corrected scores for round ${round}?${later}`)) return;
+        editRoundScores(round, scores);
     }
 
     function updateParticipant(name, ptsWon, ptsLost, outcome, rawWon = ptsWon, rawLost = ptsLost) {
@@ -1751,10 +1883,34 @@
             histContainer.innerHTML = '<p style="color:var(--text-muted); text-align:center; font-style:italic;">No matches played yet.</p>';
         } else {
             let html = '';
+            const anyLocked = matchHistoryLog.some(r => !canEditRound(r.round));
+            if (!isTournamentFinished && anyLocked) {
+                html += `<p class="edit-note">🔒 ${editLockRound ? `Scores up to round ${editLockRound} are locked because the tournament was saved and resumed more than 15 minutes later.` : 'Some scores are locked.'} Later rounds can still be corrected.</p>`;
+            }
             [...matchHistoryLog].reverse().forEach(r => {
-                html += `<div class="history-item">
-                    <div class="history-round-title">Round ${r.round} Results${r.type === 'challenge' ? ' · ⚡ Challenge round' : r.type === 'americano' ? ' · Americano mix' : ''}</div>`;
-                
+                const editable = canEditRound(r.round);
+                const tag = editable ? `<button class="edit-round-btn" onclick="startEditRound(${r.round})">✎ Edit scores</button>` : (isTournamentFinished ? '' : '<span class="edit-lock">🔒 Locked</span>');
+                html += `<div class="history-item${editingRound === r.round ? ' editing' : ''}">
+                    <div class="history-round-title"><span>Round ${r.round} Results${r.type === 'challenge' ? ' · ⚡ Challenge round' : r.type === 'americano' ? ' · Americano mix' : ''}</span>${editingRound === r.round ? '' : tag}</div>`;
+
+                if (editingRound === r.round) {
+                    html += r.matches.map((m, i) => `
+                        <div class="edit-line">
+                            <span class="edit-court">Court ${m.court}</span>
+                            <span class="edit-team">${m.team1}</span>
+                            <span class="edit-scores">
+                                <input type="number" class="score-input" id="edit-${r.round}-${i}-t1" min="0" max="${maxPoints}" value="${m.score1}" oninput="syncEditScores(${r.round}, ${i}, 1)" aria-label="Court ${m.court} team 1 score">
+                                <input type="number" class="score-input" id="edit-${r.round}-${i}-t2" min="0" max="${maxPoints}" value="${m.score2}" oninput="syncEditScores(${r.round}, ${i}, 2)" aria-label="Court ${m.court} team 2 score">
+                            </span>
+                            <span class="edit-team edit-team-right">${m.team2}</span>
+                        </div>`).join('') + `
+                        <div class="edit-actions">
+                            <button class="btn btn-secondary btn-sm" onclick="cancelEditRound()">Cancel</button>
+                            <button class="btn btn-primary btn-sm" onclick="saveEditRound(${r.round})">Save scores</button>
+                        </div></div>`;
+                    return;
+                }
+
                 r.matches.forEach(m => {
                     html += `<div style="margin-bottom: 8px; border-bottom: 1px solid var(--line); padding-bottom: 4px;">
                         <div class="history-court-line">
@@ -1822,6 +1978,8 @@
     }
 
     function finishAndSaveTournament() {
+        savedAt = new Date().toISOString();
+        editingRound = null;
         autoSaveCurrentTournament();
         document.getElementById('tournament-screen').classList.add('hidden');
         document.getElementById('setup-screen').classList.remove('hidden');
@@ -1942,6 +2100,14 @@
         lastTeamOpponentRound = t.lastTeamOpponentRound || {};
         hybridState = format === 'hybrid' ? { ...newHybridState(), ...(t.hybridState || {}) } : null;
         playingExtraRounds = !!t.playingExtraRounds;
+        roundSnapshots = Array.isArray(t.roundSnapshots) ? t.roundSnapshots : [];
+        editLockRound = t.editLockRound || 0;
+        editingRound = null;
+        // Scores stay editable if the tournament is resumed within 15 minutes of being saved
+        // (or of its last change, if it was never explicitly saved); otherwise they are locked.
+        const lastSave = Date.parse(t.savedAt || t.updatedAt || 0) || 0;
+        const lockOnResume = !t.isFinished && Date.now() - lastSave > EDIT_WINDOW_MS;
+        savedAt = null;
 
         // Tournaments saved before raw scores were tracked: rebuild them as points minus earlier rest awards.
         participants.forEach(p => { p.rawPoints = getRawPoints(p, matchHistoryLog); });
@@ -1965,6 +2131,7 @@
             }
         }
 
+        if (lockOnResume) { lockPlayedRounds(); autoSaveCurrentTournament(); }
         appendHistoryView();
         if (reopen && isTournamentFinished) reopenTournament();
     }

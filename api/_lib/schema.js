@@ -77,6 +77,16 @@ export const SCHEMA = [
     PRIMARY KEY (kind, name_key)
   )`,
 
+  // Optional player details (v1.4): nickname and preferred side ('left', 'right' or 'both').
+  `CREATE TABLE IF NOT EXISTS player_profiles (
+    kind       TEXT NOT NULL CHECK (kind IN ('player', 'team')),
+    name_key   TEXT NOT NULL,
+    nickname   TEXT,
+    side       TEXT,
+    updated_at TIMESTAMPTZ NOT NULL,
+    PRIMARY KEY (kind, name_key)
+  )`,
+
   // Upgrade for databases created by earlier versions, whose point columns were whole
   // numbers (v1.1) or limited to 2 decimal places (v1.2.3). They become exact NUMERIC
   // columns; existing values are kept. The view depends on these columns, so it is

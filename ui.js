@@ -144,6 +144,44 @@
   syncInert();
   $('headCta').addEventListener('click', () => go('setup'));
 
+  /* ----- share a read-only standings page ----- */
+  async function shareStandings(id, name) {
+    if (!id) return;
+    const url = new URL('view.html?t=' + encodeURIComponent(id), location.href).href;
+    const rec = saved().find(t => t.id === id);
+    const online = window.CloudSync && CloudSync.state.api === 'up';
+    if (!online || !CloudSync.canWrite()) {
+      if (!rec || !rec._synced) {
+        alert(online
+          ? 'This tournament is not in the online database yet. Enter the organiser key on this device (Online database) so the link can show it and update live.'
+          : 'The standings link needs the online database, which is not reachable right now.');
+        return;
+      }
+    }
+    const text = `${name || 'Padel'} – live standings`;
+    try {
+      if (navigator.share) { await navigator.share({ title: text, text, url }); return; }
+    } catch (e) { if (e && e.name === 'AbortError') return; }
+    try { await navigator.clipboard.writeText(url); alert('Link copied:\n' + url + '\n\nAnyone with the link can see the standings (read only). It updates automatically.'); }
+    catch (e) { prompt('Copy this link:', url); }
+  }
+  document.querySelectorAll('[data-share]').forEach(b => b.addEventListener('click', () => {
+    if (b.dataset.share === 'live') { autoSaveCurrentTournament(); shareStandings(tournamentId, tournamentName); }
+    else {
+      const id = typeof currentlyViewingArchiveId !== 'undefined' ? currentlyViewingArchiveId : null;
+      const t = id && saved().find(x => x.id === id);
+      shareStandings(id, t && t.name);
+    }
+  }));
+
+  /* ----- Excel backup (master key) ----- */
+  $('backupBtn').addEventListener('click', () => Backup.download());
+  function backupState() {
+    const master = window.CloudSync && CloudSync.isMaster();
+    $('backupBtn').disabled = !master;
+    $('backupBtn').title = master ? 'Download everything as an Excel workbook' : 'Needs the master key';
+  }
+
   /* ----- archive filter ----- */
   window.archiveFilter = 'all';
   $('archiveFilter').addEventListener('click', e => {
@@ -193,7 +231,7 @@
     }
   });
   window.addEventListener('padel:data-changed', () => {
-    syncStatus(); summary();
+    syncStatus(); summary(); backupState();
     if (current() === 'vault-screen') renderSavedTournamentsList();
   });
 
@@ -211,4 +249,5 @@
 
   sync();
   syncStatus();
+  backupState();
 })();

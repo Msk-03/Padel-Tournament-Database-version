@@ -110,6 +110,10 @@ npx vercel dev        # serves the site and /api on http://localhost:3000
 
 A Vercel cron (see `vercel.json`) calls `/api/maintenance` once a day. While the database is under `PURGE_AT_MB` it does nothing. Above that, finished tournaments played more than `HISTORY_DAYS` days ago lose their match-by-match history; final scores, standings and player stats are kept forever. To check the size by hand, open `/api/maintenance?dry=1` with the master key in the `x-admin-key` header.
 
+### Sharing standings
+
+"Share standings" on a live tournament (or "Share" on a saved one) gives a link to `view.html?t=<id>`: a read-only page with the table, the courts in play and the last results. It reads the online database and refreshes every 20 seconds, so the device running the tournament needs the organiser key.
+
 ## Deploy to GitHub Pages (no database)
 
 GitHub Pages only hosts static files, so the app runs there exactly as before: everything stays on each device and the status shows **This device only**. The included workflow (`.github/workflows/pages.yml`) publishes on every push to `main` once **Settings → Pages → Source** is set to **GitHub Actions**. If you only use Vercel you can delete that workflow file.

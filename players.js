@@ -121,13 +121,19 @@ window.Players = (() => {
     }
     const signed = n => (n > 0 ? '+' : '') + n;
 
+    const profileOf = r => (window.CloudSync && CloudSync.getProfile ? CloudSync.getProfile(r.kind, r.key) : null);
+    const SIDE_LABEL = { left: 'Left side', right: 'Right side', both: 'Both sides' };
+    const SIDE_SHORT = { left: 'L', right: 'R', both: 'L/R' };
+
     function cardHtml(r, i, selected) {
+        const prof = profileOf(r);
         const [first, last] = nameLines(r.name);
         const crown = r.rank === 1 ? '<span class="pl-crown" title="Leader">👑</span>' : '';
         return `<article class="pl-row pl-card ${selected ? 'open' : ''}" data-key="${esc(r.key)}" tabindex="0" role="button" aria-expanded="${selected}">
             ${avatar(r)}
             <div class="pl-card-body">
-                <h3 class="pl-name">${crown}<span class="pl-first">${esc(first)}</span> <strong>${esc(last)}</strong></h3>
+                <h3 class="pl-name">${crown}<span class="pl-first">${esc(first)}</span> <strong>${esc(last)}</strong>${prof && prof.side ? `<span class="pl-side" title="${SIDE_LABEL[prof.side]}">${SIDE_SHORT[prof.side]}</span>` : ''}</h3>
+                ${prof && prof.nickname ? `<p class="pl-nick">“${esc(prof.nickname)}”</p>` : ''}
                 <dl class="pl-mini">
                     <div><dt>Win %</dt><dd class="pl-win">${r.winPct.toFixed(0)}%</dd></div>
                     <div><dt>Titles</dt><dd class="pl-titles">${r.titles}</dd></div>
@@ -146,6 +152,7 @@ window.Players = (() => {
     }
 
     function detailHtml(r, list) {
+        const prof = profileOf(r);
         const [first, last] = nameLines(r.name);
         const fin = r.events.filter(e => e.finished).length;
         const bestAvg = Math.max(...list.map(x => x.avg), 0.0001);
@@ -163,6 +170,7 @@ window.Players = (() => {
                 <div class="pl-hero-text">
                     <p class="pl-eyebrow">${r.rank === 1 ? '👑 ' : ''}#${r.rank} · ${group}</p>
                     <h3 class="pl-hero-name">${esc(first)}<strong>${esc(last)}</strong></h3>
+                    ${prof && (prof.nickname || prof.side) ? `<p class="pl-hero-nick">${prof.nickname ? `“${esc(prof.nickname)}”` : ''}${prof.nickname && prof.side ? ' · ' : ''}${prof.side ? SIDE_LABEL[prof.side] : ''}</p>` : ''}
                     <dl class="pl-hero-stats">
                         <div><dt>Events</dt><dd>${r.tournaments}</dd></div>
                         <div><dt>Matches</dt><dd>${r.played}</dd></div>
@@ -186,9 +194,19 @@ window.Players = (() => {
                 <div><b>${cell(r.points)}</b><small>Pts won</small></div>
                 <div><b>${signed(r.diff)}</b><small>Diff</small></div>
             </div>
+            ${ui.editing === r.key ? `
+            <form class="pl-details-form" data-details-form>
+                <label>Nickname<input type="text" name="nickname" maxlength="40" value="${esc(prof ? prof.nickname : '')}" placeholder="e.g. The Wall"></label>
+                <fieldset><legend>Preferred side</legend>
+                    ${[['', 'Not set'], ['left', 'Left'], ['right', 'Right'], ['both', 'Both']].map(([v, l]) =>
+                        `<label class="pl-side-opt"><input type="radio" name="side" value="${v}" ${(prof ? prof.side : '') === v ? 'checked' : ''}><span>${l}</span></label>`).join('')}
+                </fieldset>
+                <div class="pl-details-actions"><button type="button" class="btn btn-secondary btn-sm" data-details="cancel">Cancel</button><button type="submit" class="btn btn-primary btn-sm">Save details</button></div>
+            </form>` : ''}
             <div class="pl-photo-links">
                 <button data-photo="set"><svg><use href="#i-camera"/></svg>${photoOf(r) ? 'Change photo' : 'Add photo'}</button>
                 ${photoOf(r) ? '<button data-photo="remove">Remove photo</button>' : ''}
+                ${ui.editing === r.key ? '' : `<button data-details="edit"><svg><use href="#i-record"/></svg>${prof ? 'Edit nickname & side' : 'Add nickname & side'}</button>`}
             </div>
         </section>`;
     }
@@ -210,8 +228,11 @@ window.Players = (() => {
         rows = ui.group === 'main' ? allRows.filter(r => r.played >= min) : allRows;
         rows.slice().sort(officialOrder).forEach((r, i) => { r.rank = i + 1; });
         const q = keyOf(ui.query);
-        const shown = sortRows(rows.filter(r => !q || r.key.includes(q)));
+        const shown = sortRows(rows.filter(r => !q || r.key.includes(q) || (profileOf(r) && keyOf(profileOf(r).nickname || '').includes(q))));
         $('pl-title').textContent = ui.group === 'main' ? 'Leaderboard' : 'All players';
+        const master = window.CloudSync && CloudSync.isMaster();
+        $('pl-merge').disabled = !master;
+        $('pl-merge').title = master ? 'Merge two names that are the same person' : 'Needs the master key';
         $('pl-count').textContent = `${rows.length} ${unit}${rows.length === 1 ? '' : 's'}`;
         $('pl-help').textContent = (ui.group === 'main'
             ? `${unit === 'team' ? 'Teams' : 'Players'} with ${min}+ matches`
@@ -303,6 +324,105 @@ window.Players = (() => {
         render();
     }
 
+    /* ---------- merge two players (master key) ---------- */
+    // Everyone who has played, by name key, for the merge lists (all time, finished or not).
+    function allPeople(kind) {
+        const people = new Map();
+        for (const t of getSavedTournaments()) {
+            if ((TEAM_FORMATS.includes(t.format) ? 'team' : 'player') !== kind) continue;
+            for (const p of (t.participants || t.players || [])) {
+                const key = keyOf(p.name || '');
+                if (!key) continue;
+                const rec = people.get(key) || { key, name: titleCaseName(p.name), ids: new Set() };
+                rec.ids.add(t.id);
+                people.set(key, rec);
+            }
+        }
+        return [...people.values()].sort((a, b) => a.name.localeCompare(b.name));
+    }
+
+    // Replace one name with another everywhere it appears in a saved tournament.
+    function renameInRecord(t, fromKey, toName) {
+        const swap = n => (typeof n === 'string' && keyOf(n) === fromKey ? toName : n);
+        const swapTeamText = txt => typeof txt !== 'string' ? txt
+            : keyOf(txt) === fromKey ? toName : txt.split(' & ').map(swap).join(' & ');
+        const swapKeys = obj => obj && typeof obj === 'object' && !Array.isArray(obj)
+            ? Object.fromEntries(Object.entries(obj).map(([k, v]) => [k.split(':::').map(swap).join(':::'), Array.isArray(v) ? v.map(swap) : swap(v)])) : obj;
+        const swapMatch = m => { if (m) ['p1', 'p2', 'p3', 'p4'].forEach(f => { if (m[f]) m[f] = swap(m[f]); }); };
+        (t.participants || t.players || []).forEach(p => { p.name = swap(p.name); });
+        t.winner = swapTeamText(t.winner);
+        (t.matchHistory || []).forEach(r => {
+            (r.matches || []).forEach(m => { m.team1 = swapTeamText(m.team1); m.team2 = swapTeamText(m.team2); });
+            (r.byesApplied || []).forEach(b => { b.name = swap(b.name); });
+        });
+        (t.roundActiveMatches || []).forEach(swapMatch);
+        (t.sittingOutThisRound || []).forEach(x => { if (x) x.name = swap(x.name); });
+        (t.fullPrecomputedSchedule || []).forEach(r => { (r.matches || []).forEach(swapMatch); (r.byes || []).forEach(x => { if (x) x.name = swap(x.name); }); });
+        (t.roundSnapshots || []).forEach(sn => {
+            (sn.participants || []).forEach(p => { p.name = swap(p.name); });
+            (sn.roundActiveMatches || []).forEach(swapMatch);
+            (sn.sittingOutThisRound || []).forEach(x => { if (x) x.name = swap(x.name); });
+        });
+        ['partnerCountMatrix', 'lastPartnerRound', 'teamOpponentCount', 'lastTeamOpponentRound'].forEach(f => { if (t[f]) t[f] = swapKeys(t[f]); });
+        if (t.hybridState) ['lastPartner', 'lastOpponents', 'phasePartners', 'phaseOpponents'].forEach(f => { if (t.hybridState[f]) t.hybridState[f] = swapKeys(t.hybridState[f]); });
+        t.updatedAt = new Date().toISOString();
+        delete t._synced;
+    }
+
+    function openMerge() {
+        if (!CloudSync.isMaster()) { alert('Merging players needs the master key. Enter it in Online database first.'); return; }
+        const people = allPeople(ui.kind);
+        if (people.length < 2) { alert('There are not enough players to merge.'); return; }
+        const opts = people.map(p => `<option value="${esc(p.key)}">${esc(p.name)} (${p.ids.size} tournament${p.ids.size === 1 ? '' : 's'})</option>`).join('');
+        $('merge-keep').innerHTML = opts;
+        $('merge-from').innerHTML = opts;
+        $('merge-from').selectedIndex = 1;
+        mergePreview();
+        $('mergeDialog').showModal();
+    }
+    function mergePreview() {
+        const people = new Map(allPeople(ui.kind).map(p => [p.key, p]));
+        const keep = people.get($('merge-keep').value), from = people.get($('merge-from').value);
+        const both = keep && from ? [...from.ids].filter(id => keep.ids.has(id)) : [];
+        let msg = '', ok = false;
+        if (!keep || !from || keep === from) msg = 'Choose two different names.';
+        else if (both.length) {
+            const names = getSavedTournaments().filter(t => both.includes(t.id)).map(t => t.name).join(', ');
+            msg = `Can't merge: both names played in the same tournament (${names}), so they must be different people.`;
+        } else {
+            ok = true;
+            msg = `“${from.name}” (${from.ids.size} tournament${from.ids.size === 1 ? '' : 's'}) will be renamed to “${keep.name}” everywhere, and their stats combined. This can't be undone.`;
+        }
+        $('merge-preview').textContent = msg;
+        $('merge-go').disabled = !ok;
+    }
+    function doMerge() {
+        const people = new Map(allPeople(ui.kind).map(p => [p.key, p]));
+        const keep = people.get($('merge-keep').value), from = people.get($('merge-from').value);
+        if (!keep || !from || keep === from || [...from.ids].some(id => keep.ids.has(id))) return;
+        if (!confirm(`Merge “${from.name}” into “${keep.name}”?`)) return;
+        // The live tournament is saved first, then reloaded with the new name.
+        const liveId = typeof tournamentId !== 'undefined' && participants.length && !isTournamentFinished ? tournamentId : null;
+        if (liveId) autoSaveCurrentTournament();
+        const list = getSavedTournaments();
+        list.filter(t => from.ids.has(t.id)).forEach(t => renameInRecord(t, from.key, keep.name));
+        saveTournamentsToStorage(list);
+        // Photo and details follow the player if the kept name has none.
+        const ph = CloudSync.getPhoto(ui.kind, from.key);
+        if (ph) { if (!CloudSync.getPhoto(ui.kind, keep.key)) CloudSync.setPhoto(ui.kind, keep.key, ph); CloudSync.setPhoto(ui.kind, from.key, null); }
+        const pr = CloudSync.getProfile(ui.kind, from.key);
+        if (pr) { if (!CloudSync.getProfile(ui.kind, keep.key)) CloudSync.setProfile(ui.kind, keep.key, pr); CloudSync.setProfile(ui.kind, from.key, { nickname: '', side: '' }); }
+        if (liveId && from.ids.has(liveId)) {
+            const screens = ['setup-screen', 'tournament-screen', 'vault-screen', 'archive-view-screen', 'players-screen', 'record-screen'];
+            resumeTournamentById(liveId);
+            screens.forEach(id => document.getElementById(id).classList.toggle('hidden', id !== 'players-screen'));
+        }
+        CloudSync.queueSave();
+        $('mergeDialog').close();
+        ui.open = keep.key;
+        render();
+    }
+
     function openTournament(id) {
         $('players-screen').classList.add('hidden');
         viewTournamentDetails(id);
@@ -326,6 +446,11 @@ window.Players = (() => {
         $('pl-from').addEventListener('change', e => setPeriod(e.target.value, ui.to));
         $('pl-to').addEventListener('change', e => setPeriod(ui.from, e.target.value));
         $('pl-date-clear').addEventListener('click', () => setPeriod('', ''));
+        $('pl-merge').addEventListener('click', openMerge);
+        $('merge-keep').addEventListener('change', mergePreview);
+        $('merge-from').addEventListener('change', mergePreview);
+        $('merge-go').addEventListener('click', doMerge);
+        $('merge-cancel').addEventListener('click', () => $('mergeDialog').close());
         $('pl-unfinished').addEventListener('change', e => { ui.includeUnfinished = e.target.checked; render(); });
         $('pl-search').addEventListener('input', e => { ui.query = e.target.value; render(); });
         $('pl-sorts').addEventListener('click', e => {
@@ -342,11 +467,34 @@ window.Players = (() => {
             if (btn) return openTournament(btn.dataset.open);
             const ph = e.target.closest('[data-photo]');
             if (ph) return photoAction(ph.dataset.photo);
+            const dt = e.target.closest('[data-details]');
+            if (dt) {
+                const sel = currentRows.find(r => r.key === ui.open);
+                if (dt.dataset.details === 'edit' && sel) {
+                    if (profileOf(sel) && !CloudSync.mayChangeProfile(sel.kind, sel.key)) { alert(CloudSync.MASTER_ONLY); return; }
+                    ui.editing = sel.key;
+                } else ui.editing = null;
+                render();
+                return;
+            }
             if (e.target.closest('[data-close]')) { ui.open = null; if (!wide.matches) render(); return; }
             if (e.target.closest('.pl-detail')) return;
             const card = e.target.closest('.pl-card');
             if (card) toggle(card);
         };
+        const onSubmit = e => {
+            const form = e.target.closest('[data-details-form]');
+            if (!form) return;
+            e.preventDefault();
+            const sel = currentRows.find(r => r.key === ui.open);
+            if (!sel) return;
+            const fd = new FormData(form);
+            CloudSync.setProfile(sel.kind, sel.key, { nickname: String(fd.get('nickname') || ''), side: String(fd.get('side') || '') });
+            ui.editing = null;
+            render();
+        };
+        $('pl-body').addEventListener('submit', onSubmit);
+        $('pl-aside').addEventListener('submit', onSubmit);
         $('pl-body').addEventListener('click', onClick);
         $('pl-aside').addEventListener('click', onClick);
         $('pl-body').addEventListener('keydown', e => {
@@ -369,6 +517,19 @@ window.Players = (() => {
         window.addEventListener('padel:data-changed', render);
     }
 
+    // Career rows for the Excel backup: all time, completed tournaments, ranked like the leaderboard.
+    function careerRows(kind) {
+        const saved = { kind: ui.kind, from: ui.from, to: ui.to, inc: ui.includeUnfinished };
+        Object.assign(ui, { kind, from: '', to: '', includeUnfinished: false });
+        try {
+            const rows = compute().rows.sort(officialOrder);
+            rows.forEach((r, i) => { r.rank = i + 1; r.profile = profileOf(r); });
+            return rows;
+        } finally {
+            Object.assign(ui, { kind: saved.kind, from: saved.from, to: saved.to, includeUnfinished: saved.inc });
+        }
+    }
+
     init();
-    return { render };
+    return { render, careerRows };
 })();

@@ -39,13 +39,23 @@ async function save(sql, request, role) {
   if (role !== 'master') {
     const [cur] = await sql`
       SELECT (SELECT count(*)::int FROM matches WHERE tournament_id = ${t.id}) AS match_count,
-             state->'participants' AS participants, updated_at
+             state->'participants' AS participants, coalesce((state->>'editLockRound')::int, 0) AS lock_round, is_finished, updated_at
         FROM tournaments WHERE id = ${t.id}`;
     if (cur && new Date(cur.updated_at) <= new Date(t.updatedAt)) {
       const before = (typeof cur.participants === 'string' ? JSON.parse(cur.participants) : cur.participants) || [];
       const now = new Set(entries.map(e => e.key));
       if (matches.length < cur.match_count) throw new HttpError(403, 'Only the master key can delete matches from a saved tournament.');
       if (before.some(p => p && p.name && !now.has(nameKey(p.name)))) throw new HttpError(403, 'Only the master key can remove or rename players in a saved tournament.');
+      // Scores of locked rounds (saved and resumed later, or finished) can't be changed.
+      if ((Number(record.editLockRound) || 0) < cur.lock_round) throw new HttpError(403, 'Only the master key can unlock saved scores.');
+      const lock = cur.is_finished ? 1e6 : cur.lock_round;   // a finished tournament's scores are all locked
+      if (lock > 0) {
+        const saved = await sql`SELECT round, court, score1, score2 FROM matches WHERE tournament_id = ${t.id} AND round <= ${lock}`;
+        const incoming = new Map(matches.map(m => [`${m.round}:${m.court}`, m]));
+        if (saved.some(m => { const n = incoming.get(`${m.round}:${m.court}`); return !n || n.score1 !== m.score1 || n.score2 !== m.score2; })) {
+          throw new HttpError(403, 'Saved scores are locked. Only the master key can change them.');
+        }
+      }
     }
   }
   const state = { ...record };

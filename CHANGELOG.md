@@ -2,6 +2,12 @@
 
 ## 1.4.0 – 2026-11-09
 
+- Edit scores: correct any round from the Match history tab while playing. The tournament is replayed from that round with the same pairings, so points, rests, multipliers and boxes follow. Scores lock when a tournament is finished, or when it is resumed more than 15 minutes after "Save & exit" (the server enforces the lock for the organiser key).
+- Excel backup (master key): Overview, Player stats, Team stats, Tournaments, Final standings and Matches sheets, styled and print-ready.
+- Merge players (master key): combine two names for the same person across every tournament; photo and details follow.
+- Nickname and preferred side for each player (new /api/profiles endpoint and player_profiles table). Adding needs the organiser key; changing needs the master key.
+- Shareable read-only standings page (view.html?t=…): table, courts on now and last results, refreshing every 20 seconds.
+
 - Player stats period filter: All time, This month, Last month, Last 3 / 6 months, This year, or custom From / To dates. Stats, ranks and the 30-match leaderboard count only tournaments played in that period.
 
 - Two keys: `ADMIN_KEY` (organiser: create and play, add photos) and the new optional `MASTER_KEY` (also delete tournaments and matches, remove or rename players, change or remove photos). Enforced by the API; the app hides or blocks what your key can't do.

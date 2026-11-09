@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Live standings · Padel Center</title>
+  <meta name="theme-color" content="#f1f6f5" />
+  <meta name="robots" content="noindex" />
+  <link rel="icon" type="image/png" sizes="192x192" href="padel_app_icon.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <script>
+    (function () {
+      var t = null;
+      try { t = localStorage.getItem('padel_theme'); } catch (e) {}
+      if (t !== 'light' && t !== 'dark') t = window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+      document.documentElement.dataset.theme = t;
+    })();
+  </script>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body class="view-page">
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="i-court" viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M8.5 4.5v15M15.5 4.5v15M8.5 12h7"/></symbol>
+    <symbol id="i-calendar" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="15" rx="2.5"/><path d="M8 3v4M16 3v4M4 10h16M8.5 14h2M13.5 14h2"/></symbol>
+    <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M19.5 12a7.5 7.5 0 11-2.2-5.3M19.5 4.5v4h-4"/></symbol>
+  </defs>
+</svg>
+<main class="view-main">
+  <header class="view-top">
+    <div class="brand"><svg class="brand-icon"><use href="#i-court"/></svg><span class="brand-name">Padel<b>Center</b></span></div>
+    <span class="view-badge">Live standings · read only</span>
+  </header>
+  <div id="view-root"><p class="pl-empty">Loading standings…</p></div>
+  <p class="view-foot" id="view-foot"></p>
+</main>
+<script src="view.js"></script>
+</body>
+</html>

@@ -39,11 +39,14 @@ window.CloudSync = (() => {
     // Player photos: { "player:ali hassan": { data, updatedAt, synced } }. data null = removed.
     const PHOTO_STORE = 'padel_player_photos_v1';
     const PHOTO_SINCE = 'padel_player_photos_since_v1';
+    // Player details: { "player:ali hassan": { nickname, side, updatedAt, synced } }.
+    const PROFILE_STORE = 'padel_player_profiles_v1';
+    const PROFILE_SINCE = 'padel_player_profiles_since_v1';
     const API = './api';
     // Fields only needed to resume play. Finished, already-uploaded tournaments
     // can drop them if the device runs out of storage; they are re-downloaded on resume.
     const HEAVY = ['fullPrecomputedSchedule', 'partnerCountMatrix', 'lastPartnerRound', 'teamOpponentCount',
-                   'lastTeamOpponentRound', 'roundActiveMatches', 'sittingOutThisRound', 'beatTheBoxPositions'];
+                   'lastTeamOpponentRound', 'roundActiveMatches', 'sittingOutThisRound', 'beatTheBoxPositions', 'roundSnapshots'];
 
     const state = {
         api: 'checking',       // checking | up | none | offline | error
@@ -126,6 +129,65 @@ window.CloudSync = (() => {
         }
         if (changedAny) writePhotos(all);
         try { localStorage.setItem(PHOTO_SINCE, latest); } catch (e) {}
+        return changedAny;
+    }
+
+    /* ---------- player details (nickname, preferred side) ---------- */
+    const readProfiles = () => { try { return JSON.parse(localStorage.getItem(PROFILE_STORE)) || {}; } catch (e) { return {}; } };
+    const writeProfiles = all => { try { localStorage.setItem(PROFILE_STORE, JSON.stringify(all)); return true; } catch (e) { return false; } };
+    function getProfile(kind, name) {
+        const p = readProfiles()[photoKey(kind, name)];
+        return p && (p.nickname || p.side) ? { nickname: p.nickname || '', side: p.side || '' } : null;
+    }
+    function setProfile(kind, name, details) {
+        const all = readProfiles();
+        all[photoKey(kind, name)] = { nickname: (details && details.nickname || '').trim() || null, side: details && details.side || null, updatedAt: new Date().toISOString(), synced: false };
+        if (!writeProfiles(all)) return false;
+        queueSave();
+        return true;
+    }
+    function mayChangeProfile(kind, name) {
+        const p = readProfiles()[photoKey(kind, name)];
+        return !p || !(p.nickname || p.side) || !p.synced || state.api === 'none' || isMaster();
+    }
+    async function pushProfiles() {
+        const all = readProfiles();
+        for (const [k, p] of Object.entries(all)) {
+            if (p.synced) continue;
+            const i = k.indexOf(':');
+            try {
+                await api('/profiles', { method: 'PUT', body: JSON.stringify({ kind: k.slice(0, i), key: k.slice(i + 1), nickname: p.nickname, side: p.side, updatedAt: p.updatedAt }) });
+            } catch (e) {
+                if (e.status !== 403) throw e;
+                state.notice = e.message;
+                const now = readProfiles(); delete now[k]; writeProfiles(now);
+                try { localStorage.removeItem(PROFILE_SINCE); } catch (err) {}
+                continue;
+            }
+            const now = readProfiles();
+            if (now[k] && now[k].updatedAt === p.updatedAt) { now[k].synced = true; writeProfiles(now); }
+        }
+    }
+    async function pullProfiles() {
+        let since = '';
+        try { since = localStorage.getItem(PROFILE_SINCE) || ''; } catch (e) {}
+        let data;
+        try { data = await api('/profiles' + (since ? '?since=' + encodeURIComponent(since) : '')); }
+        catch (e) { if (e.status === 404 || e.status === 405) return false; throw e; }
+        const remote = (data && data.profiles) || [];
+        if (!remote.length) return false;
+        const all = readProfiles();
+        let latest = since, changedAny = false;
+        for (const r of remote) {
+            const k = r.kind + ':' + r.key, cur = all[k];
+            if (!cur || cur.synced || Date.parse(r.updated_at) > Date.parse(cur.updatedAt)) {
+                all[k] = { nickname: r.nickname || null, side: r.side || null, updatedAt: r.updated_at, synced: true };
+                changedAny = true;
+            }
+            if (!latest || r.updated_at > latest) latest = r.updated_at;
+        }
+        if (changedAny) writeProfiles(all);
+        try { localStorage.setItem(PROFILE_SINCE, latest); } catch (e) {}
         return changedAny;
     }
 
@@ -309,8 +371,9 @@ window.CloudSync = (() => {
                 if (canWrite()) await pushDeletes();
                 let dataChanged = await pull();
                 if (canWrite() && await pushSaves()) dataChanged = (await pull()) || dataChanged;
-                if (canWrite()) await pushPhotos();
+                if (canWrite()) { await pushPhotos(); await pushProfiles(); }
                 dataChanged = (await pullPhotos()) || dataChanged;
+                dataChanged = (await pullProfiles()) || dataChanged;
                 state.lastSync = Date.now();
                 state.error = '';
                 if (dataChanged && typeof updateArchiveCountBadge === 'function') updateArchiveCountBadge();
@@ -373,7 +436,7 @@ window.CloudSync = (() => {
     }
 
     function status() {
-        const pending = getSavedTournaments().filter(t => !t._synced).length + Object.values(readPhotos()).filter(p => !p.synced).length;
+        const pending = getSavedTournaments().filter(t => !t._synced).length + Object.values(readPhotos()).filter(p => !p.synced).length + Object.values(readProfiles()).filter(p => !p.synced).length;
         const s = state;
         if (s.api === 'checking') return { tone: 'idle', label: 'Connecting…', detail: 'Looking for the online database.' };
         if (s.api === 'none') return { tone: 'idle', label: 'This device only', detail: 'This site has no database connected, so tournaments are saved on this device only.' };
@@ -401,5 +464,5 @@ window.CloudSync = (() => {
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => syncNow());
     else syncNow();
 
-    return { MASTER_ONLY, mayDeleteTournament, mayChangePhoto, isMaster, getPhoto, setPhoto, writeLocal, queueSave, queueDelete, loadFull, syncNow, setKey, status, hasKey: () => !!getKey(), canWrite, state };
+    return { getProfile, setProfile, mayChangeProfile, MASTER_ONLY, mayDeleteTournament, mayChangePhoto, isMaster, getPhoto, setPhoto, writeLocal, queueSave, queueDelete, loadFull, syncNow, setKey, status, hasKey: () => !!getKey(), canWrite, state };
 })();

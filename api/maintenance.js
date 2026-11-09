@@ -9,7 +9,7 @@
 import { getSql, json, route, roleOf, HttpError } from './_lib/db.js';
 
 const HEAVY = ['matchHistory', 'fullPrecomputedSchedule', 'partnerCountMatrix', 'lastPartnerRound', 'teamOpponentCount',
-               'lastTeamOpponentRound', 'roundActiveMatches', 'sittingOutThisRound', 'beatTheBoxPositions'];
+               'lastTeamOpponentRound', 'roundActiveMatches', 'sittingOutThisRound', 'beatTheBoxPositions', 'roundSnapshots'];
 
 function allowed(request) {
   const secret = process.env.CRON_SECRET;
