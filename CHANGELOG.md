@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.4.0 – 2026-11-09
+
+- New look based on the "rally" Figma design: light and dark themes, sidebar on desktop, icon strip on tablets, bottom navigation on phones.
+- Bigger player name boxes; one per line when there isn't room for two.
+- Modern buttons (larger, rounded, with icons). "Save & exit" keeps the tournament; "Delete tournament" removes it after confirming (the old "Abandon / exit" did the same as saving).
+- Setup form keeps what you typed: changing the format, courts, date or number of players no longer clears player names or a custom tournament name.
+- Finished tournaments can be continued: "Continue playing" in the archive or "Reopen & keep playing" on the champion card. Reopened Americano tournaments carry on with extra rounds until you finish them.
+- Player stats redesigned as player cards (initials avatar, win %, titles, diff, played, position number) with a detail panel: rank, events, matches, titles, stat bars (win rate, avg points, points won share, podium rate, title rate), W/T/L record and tournament history.
+- Two lists: "Leaderboard · 30+ matches" and "All players". Both ranked by win %, then titles, then points difference; sort pills keep 1, 2, 3… numbering.
+- Optional player photos: add, change or remove a photo from a player's details. Photos are shrunk to a small JPEG, shown on the cards instead of initials, and synced through the database (new /api/photos endpoint and player_photos table, created automatically).
+- Player details show the photo with the name and stats beside it; the tournament history list was removed from the card.
+- Every word of a player or team name is capitalised (setup boxes, Record past and Player stats).
+- Record past: "Max points per match", columns W / T / L / Pts won / Pts lost / Diff; points lost (matches × max points − points won) and the difference are worked out automatically, and can be overridden.
+- Bigger score boxes and court rows; Submit round and Finish tournament are equal-size buttons; button pairs are the same width.
+- Live round: larger Submit round / Finish tournament buttons side by side (stacked on phones). "Open archive" sits on the left of the setup form. Breadcrumb removed from the page header.
+
 ## 1.3.9 – 2026-11-08
 
 - Player stats: the # column now numbers rows 1, 2, 3… in whatever order the table is sorted (e.g. by Win %). The 👑 stays next to the overall leader's name, also while searching.

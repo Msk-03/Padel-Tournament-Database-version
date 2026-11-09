@@ -67,6 +67,16 @@ export const SCHEMA = [
     PRIMARY KEY (tournament_id, round, court)
   )`,
 
+  // Optional player photos (v1.4). One small JPEG per player or team, keyed like players.name_key.
+  // data is NULL once a photo is removed, so the removal reaches other devices.
+  `CREATE TABLE IF NOT EXISTS player_photos (
+    kind       TEXT NOT NULL CHECK (kind IN ('player', 'team')),
+    name_key   TEXT NOT NULL,
+    data       TEXT,
+    updated_at TIMESTAMPTZ NOT NULL,
+    PRIMARY KEY (kind, name_key)
+  )`,
+
   // Upgrade for databases created by earlier versions, whose point columns were whole
   // numbers (v1.1) or limited to 2 decimal places (v1.2.3). They become exact NUMERIC
   // columns; existing values are kept. The view depends on these columns, so it is

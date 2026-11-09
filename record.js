@@ -9,7 +9,18 @@ window.Recorder = (() => {
     const num = v => { const n = parseFloat(v); return Number.isFinite(n) && n >= 0 ? n : 0; };
     const whole = v => Math.floor(num(v));
     const show = n => Math.round(n * 100) / 100;
-    let rows = [];   // { name, won, lost, w, t, l }
+    let rows = [];   // { name, won, lost, w, t, l, lostManual }
+    const maxPts = () => parseInt($('rec-points').value) || 16;
+
+    // Points lost are worked out from points won: every match is played to the max points, so
+    // lost = matches played (W + T + L) × max points − points won. Typing a value in "Pts lost"
+    // yourself switches this off for that row (e.g. for Super Mexicano tables with multipliers).
+    function autoLost(r) {
+        if (r.lostManual) return;
+        const played = whole(r.w) + whole(r.t) + whole(r.l);
+        r.lost = r.won === '' || !played ? '' : String(show(Math.max(0, played * maxPts() - num(r.won))));
+    }
+    const diffOf = r => (r.won === '' || r.lost === '') ? '–' : (d => (d > 0 ? '+' : '') + d)(show(num(r.won) - num(r.lost)));
 
     const isTeam = () => TEAM_FORMATS.includes($('rec-format').value);
     const today = () => new Date().toISOString().slice(0, 10);
@@ -35,7 +46,7 @@ window.Recorder = (() => {
     }
 
     function resize(n) {
-        while (rows.length < n) rows.push({ name: '', won: '', lost: '', w: '', t: '', l: '' });
+        while (rows.length < n) rows.push({ name: '', won: '', lost: '', w: '', t: '', l: '', lostManual: false });
         rows.length = n;
         renderTable();
     }
@@ -47,11 +58,12 @@ window.Recorder = (() => {
             <tr data-i="${i}">
                 <td class="rec-n">${i + 1}</td>
                 <td><input class="rec-in rec-name" data-f="name" value="${esc(r.name)}" placeholder="${team ? 'Team ' : 'Player '}${i + 1}" aria-label="Name ${i + 1}"></td>
+                <td><input class="rec-in rec-sm" data-f="w" type="number" min="0" step="1" inputmode="numeric" value="${esc(r.w)}" aria-label="Wins ${i + 1}"></td>
+                <td><input class="rec-in rec-sm" data-f="t" type="number" min="0" step="1" inputmode="numeric" value="${esc(r.t)}" aria-label="Ties ${i + 1}"></td>
+                <td><input class="rec-in rec-sm" data-f="l" type="number" min="0" step="1" inputmode="numeric" value="${esc(r.l)}" aria-label="Losses ${i + 1}"></td>
                 <td><input class="rec-in" data-f="won" type="number" min="0" step="any" inputmode="decimal" value="${esc(r.won)}" aria-label="Points won ${i + 1}"></td>
-                <td><input class="rec-in" data-f="lost" type="number" min="0" step="any" inputmode="decimal" value="${esc(r.lost)}" aria-label="Points lost ${i + 1}"></td>
-                <td><input class="rec-in" data-f="w" type="number" min="0" step="1" inputmode="numeric" value="${esc(r.w)}" aria-label="Wins ${i + 1}"></td>
-                <td><input class="rec-in" data-f="t" type="number" min="0" step="1" inputmode="numeric" value="${esc(r.t)}" aria-label="Ties ${i + 1}"></td>
-                <td><input class="rec-in" data-f="l" type="number" min="0" step="1" inputmode="numeric" value="${esc(r.l)}" aria-label="Losses ${i + 1}"></td>
+                <td><input class="rec-in ${r.lostManual ? '' : 'rec-auto'}" data-f="lost" type="number" min="0" step="any" inputmode="decimal" value="${esc(r.lost)}" aria-label="Points lost ${i + 1}" title="Worked out from points won and matches played. Type to override."></td>
+                <td class="rec-diff">${diffOf(r)}</td>
             </tr>`).join('');
         preview();
     }
@@ -59,7 +71,7 @@ window.Recorder = (() => {
     // Same ordering as the in-app leaderboard: points, difference, wins, fewest losses.
     function standings() {
         return rows
-            .map(r => ({ name: r.name.trim(), points: num(r.won), pointsLost: num(r.lost), wins: whole(r.w), ties: whole(r.t), losses: whole(r.l) }))
+            .map(r => ({ name: titleCaseName(r.name), points: num(r.won), pointsLost: num(r.lost), wins: whole(r.w), ties: whole(r.t), losses: whole(r.l) }))
             .filter(r => r.name)
             .sort((a, b) => (b.points - a.points) || ((b.points - b.pointsLost) - (a.points - a.pointsLost)) || (b.wins - a.wins) || (a.losses - b.losses));
     }
@@ -80,18 +92,19 @@ window.Recorder = (() => {
         if (!name) problems.push('Give the tournament a name.');
         if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) problems.push('Choose the date it was played.');
         else if (date > today()) problems.push('The date is in the future. This page is for tournaments already played.');
-        const names = rows.map(r => r.name.trim());
+        rows.forEach(r => { r.name = titleCaseName(r.name); });
+        const names = rows.map(r => r.name);
         if (names.some(n => !n)) problems.push(`Fill in every ${isTeam() ? 'team' : 'player'} name (or lower the number).`);
         const lower = names.filter(Boolean).map(n => n.toLowerCase());
         if (new Set(lower).size !== lower.length) problems.push('Every name must be different.');
-        if (rows.some(r => r.won === '' || r.lost === '')) problems.push('Enter points won and points lost for everyone (0 is fine).');
+        if (rows.some(r => r.won === '' || r.lost === '')) problems.push('Enter wins/ties/losses and points won for everyone (0 is fine), so points lost can be worked out.');
         if (problems.length) { alert(problems.join('\n')); return; }
 
         const list = standings();
         const participants = rows.map((r, i) => {
             const w = whole(r.w), t = whole(r.t), l = whole(r.l);
             return {
-                id: i, name: r.name.trim(),
+                id: i, name: r.name,
                 points: num(r.won), pointsLost: num(r.lost),
                 // No match history for recorded tournaments: the entered points are treated as 1.0x.
                 rawPoints: num(r.won), rawPointsLost: num(r.lost),
@@ -152,10 +165,24 @@ window.Recorder = (() => {
         $('rec-body').addEventListener('input', e => {
             const input = e.target.closest('.rec-in');
             if (!input) return;
-            rows[+input.closest('tr').dataset.i][input.dataset.f] = input.value;
+            const tr = input.closest('tr'), r = rows[+tr.dataset.i], f = input.dataset.f;
+            r[f] = input.value;
+            if (f === 'lost') { r.lostManual = input.value !== ''; input.classList.toggle('rec-auto', !r.lostManual); if (!r.lostManual) autoLost(r); }
+            else if (f !== 'name') autoLost(r);
+            const lostIn = tr.querySelector('[data-f=lost]');
+            if (f !== 'lost' && lostIn.value !== r.lost) lostIn.value = r.lost;
+            tr.querySelector('.rec-diff').textContent = diffOf(r);
             preview();
         });
         // Enter moves to the same column on the next row
+        $('rec-body').addEventListener('focusout', e => {
+            const input = e.target.closest('.rec-name');
+            if (!input) return;
+            input.value = titleCaseName(input.value);
+            rows[+input.closest('tr').dataset.i].name = input.value;
+            preview();
+        });
+        $('rec-points').addEventListener('change', () => { rows.forEach(autoLost); renderTable(); });
         $('rec-body').addEventListener('keydown', e => {
             if (e.key !== 'Enter') return;
             const input = e.target.closest('.rec-in');

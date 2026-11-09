@@ -1,4 +1,4 @@
-/* Padel Tournament Center – engine (logic unchanged; colours tuned for the light theme).
+/* Padel Tournament Center – engine (logic unchanged; colours come from the theme variables in style.css).
    Saving and loading lives in cloud.js (this device + online database). */
 
     // POINTS: exact values are stored and used for every calculation and for ranking
@@ -88,8 +88,17 @@
         
         const formattedDate = formatDisplayDate(d);
         const formatTitle = formatTitleName(fmt);
-        document.getElementById('tournament-name').value = `${formatTitle} - ${formattedDate}`;
+        const nameInput = document.getElementById('tournament-name');
+        // Only replace the name if it is empty or still the one we generated; a typed name is kept.
+        if (!nameInput.value.trim() || nameInput.value === lastAutoTournamentName) {
+            lastAutoTournamentName = `${formatTitle} - ${formattedDate}`;
+            nameInput.value = lastAutoTournamentName;
+        }
     }
+    let lastAutoTournamentName = '';
+    // Americano formats end by themselves after the full rotation; once reopened they keep going
+    // (extra rounds seeded by standings) until you finish them by hand.
+    let playingExtraRounds = false;
 
     window.addEventListener('DOMContentLoaded', () => {
         const today = new Date();
@@ -159,6 +168,7 @@
         if (isNaN(currentVal) || currentVal < minRequired) {
             currentVal = minRequired;
         }
+        if (currentVal > maxRange) currentVal = maxRange;
 
         let optionsHtml = '';
         for (let i = minRequired; i <= maxRange; i++) {
@@ -180,20 +190,28 @@
         return list;
     }
 
+    // Names typed on the setup screen, by box number. Kept when the format, courts or number of
+    // players change, so boxes that disappear get their names back if they reappear.
+    let typedParticipantNames = [];
+    function stashTypedNames() {
+        document.querySelectorAll('#participant-grid .pill-input').forEach((inp, i) => { typedParticipantNames[i] = inp.value; });
+    }
+
     function renderParticipantGrid(count, preserveValues = true) {
         const grid = document.getElementById('participant-grid');
         const fmt = document.getElementById('tournament-type').value;
         const isTeam = isTeamFormat(fmt);
-        const existing = preserveValues ? getCurrentInputNames() : [];
+        if (preserveValues) stashTypedNames(); else typedParticipantNames = [];
+        const esc = v => String(v).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
 
         let html = '';
         for (let i = 1; i <= count; i++) {
-            let val = existing[i - 1] || '';
+            let val = esc(typedParticipantNames[i - 1] || '');
             const placeholder = isTeam ? `Team ${i} (P1 & P2)` : `Player ${i}`;
             html += `
                 <div class="participant-pill">
                     <span class="pill-badge">#${i}</span>
-                    <input type="text" id="participant-pill-${i}" class="pill-input" value="${val}" placeholder="${placeholder}" onkeydown="handlePillKeydown(event, ${i})">
+                    <input type="text" id="participant-pill-${i}" class="pill-input" value="${val}" placeholder="${placeholder}" onkeydown="handlePillKeydown(event, ${i})" onblur="this.value = titleCaseName(this.value)" autocapitalize="words">
                 </div>
             `;
         }
@@ -272,7 +290,7 @@
         }
 
         const count = populateParticipantCountDropdown();
-        renderParticipantGrid(count, false);
+        renderParticipantGrid(count, true);
     }
 
     function onCourtCountChange() {
@@ -341,6 +359,7 @@
             teamOpponentCount: teamOpponentCount,
             lastTeamOpponentRound: lastTeamOpponentRound,
             hybridState: hybridState,
+            playingExtraRounds: playingExtraRounds,
             updatedAt: new Date().toISOString()
         };
 
@@ -356,7 +375,7 @@
     }
 
     function cleanParticipantName(str) {
-        return str.replace(/^[#\d]+[\.\)\-\:\s]+\s*/, '').trim();
+        return titleCaseName(str.replace(/^[#\d]+[\.\)\-\:\s]+\s*/, '').trim());
     }
 
     function calculateTotalAmericanoRounds() {
@@ -522,6 +541,7 @@
     }
 
     function startTournament() {
+        playingExtraRounds = false;
         const rawNames = getCurrentInputNames();
         const names = rawNames
             .map(n => cleanParticipantName(n))
@@ -608,7 +628,7 @@
 
         const finishActionBtn = document.getElementById('btn-finish-crown-action');
         if (finishActionBtn) {
-            if (format === 'americano' || format === 'team-americano') {
+            if ((format === 'americano' || format === 'team-americano') && !playingExtraRounds) {
                 finishActionBtn.classList.add('hidden');
             } else {
                 finishActionBtn.classList.remove('hidden');
@@ -1245,7 +1265,7 @@
         const maxAmericanoRounds = calculateTotalAmericanoRounds();
         let americanoInfoExtra = "";
         if (format === 'americano' || format === 'team-americano') {
-            americanoInfoExtra = ` (Round ${currentRound} of ${maxAmericanoRounds})`;
+            americanoInfoExtra = currentRound > maxAmericanoRounds ? ' (extra round, seeded by standings)' : ` (Round ${currentRound} of ${maxAmericanoRounds})`;
         }
 
         document.getElementById('round-title').innerText = 'Round ' + currentRound;
@@ -1321,7 +1341,7 @@
                     p4: ""
                 });
             }
-        } else if (format === 'team-mexicano') {
+        } else if (format === 'team-mexicano' || format === 'team-americano') {
             active.sort((a, b) => {
                 if (b.points !== a.points) return b.points - a.points;
                 const diffA = exactPts(a.points - a.pointsLost);
@@ -1394,11 +1414,10 @@
             const team1Display = isTeam ? `<span><strong>${match.p1}</strong></span>` : `<span>${match.p1}</span><span>${match.p2}</span>`;
             const team2Display = isTeam ? `<span><strong>${match.p3}</strong></span>` : `<span>${match.p3}</span><span>${match.p4}</span>`;
 
-            html += `<div class="court-block" style="border-left-color: ${color}">
-                <div class="court-header">
-                    <span>${format === 'beat-the-box' ? ('Box Court ' + match.courtNum) : ('Court ' + match.courtNum)}</span>
-                    <span class="badge" style="background: ${color}">${label}</span>
-                </div>
+            const chip = (format === 'hybrid' && match.challenge) || (format === 'beat-the-box' && match.courtNum === 1) ? 'chip-lime'
+                : (format === 'super-mexicano' && getCourtMultiplier(match.courtNum) > 1) ? 'chip-green' : 'chip-grey';
+            html += `<div class="court-block">
+                <div class="court-id"><small>${format === 'beat-the-box' ? 'BOX' : 'COURT'}</small><b>${String(match.courtNum).padStart(2, '0')}</b></div>
                 <div class="match-grid">
                     <div class="team-names team-left">${team1Display}</div>
                     <div class="score-box">
@@ -1408,6 +1427,7 @@
                     </div>
                     <div class="team-names team-right">${team2Display}</div>
                 </div>
+                <span class="badge chip court-tag ${chip}">${label}</span>
             </div>`;
         });
 
@@ -1480,6 +1500,7 @@
                     <h3>🏆 TOURNAMENT CHAMPION 🏆</h3>
                     <div class="champ-name">${winner.name}</div>
                     <div class="champ-stats">${fmtPts(winner.points)} Pts Won &nbsp;|&nbsp; Diff: ${diffSign}${diff} &nbsp;|&nbsp; Matches: ${winner.wins}W - ${winner.ties}T - ${winner.losses}L</div>
+                    <button class="btn btn-sm btn-glass" onclick="reopenTournament()"><svg><use href="#i-refresh"/></svg>Reopen &amp; keep playing</button>
                 </div>
             `;
         }
@@ -1658,7 +1679,7 @@
 
         // Check if Americano formats have completed their full round-robin
         const maxAmericanoRounds = calculateTotalAmericanoRounds();
-        if ((format === 'americano' || format === 'team-americano') && currentRound >= maxAmericanoRounds) {
+        if ((format === 'americano' || format === 'team-americano') && currentRound >= maxAmericanoRounds && !playingExtraRounds) {
             triggerTournamentFinish(true);
             return;
         }
@@ -1700,11 +1721,11 @@
         tbody.innerHTML = displayList.map((p, idx) => {
             const diff = shownDiff(p.points, p.pointsLost);
             const diffSign = diff > 0 ? '+' : '';
-            const boxBadge = format === 'beat-the-box' ? `<span class="badge" style="background:#3b82f6; margin-left:6px;">Box ${p.currentBox || '-'}</span>` : '';
+            const boxBadge = format === 'beat-the-box' ? `<span class="badge" style="background:var(--c-box); margin-left:6px;">Box ${p.currentBox || '-'}</span>` : '';
             
             const isCrown = isTournamentFinished && idx === 0;
             const rankBadge = isCrown ? '👑 #1' : `#${idx + 1}`;
-            const rowStyle = isCrown ? 'background: rgba(245, 158, 11, 0.12);' : '';
+            const rowStyle = isCrown ? 'background: var(--gold-row);' : '';
 
             return `
                 <tr style="${rowStyle}">
@@ -1712,12 +1733,12 @@
                     <td><strong>${p.name}</strong>${boxBadge}</td>
                     <td style="font-weight:bold; color:var(--accent);">${ptsCell(p.points)}</td>
                     ${thirdColumnCell(p, format, matchHistoryLog, hybridState)}
-                    <td style="font-weight:bold; color:#d63a5a;">${ptsCell(p.pointsLost)}</td>
-                    <td style="font-weight:600; color:${diff >= 0 ? '#0e7a82' : '#d63a5a'};">${diffSign}${diff}</td>
+                    <td style="font-weight:bold; color:var(--c-loss);">${ptsCell(p.pointsLost)}</td>
+                    <td style="font-weight:600; color:${diff >= 0 ? 'var(--c-pos)' : 'var(--c-loss)'};">${diffSign}${diff}</td>
                     <td>${p.roundsPlayed}</td>
-                    <td style="color:#1f9d55; font-weight:600;">${p.wins}</td>
-                    <td style="color:#b7860b; font-weight:600;">${p.ties}</td>
-                    <td style="color:#d63a3a; font-weight:600;">${p.losses}</td>
+                    <td style="color:var(--c-win); font-weight:600;">${p.wins}</td>
+                    <td style="color:var(--c-tie); font-weight:600;">${p.ties}</td>
+                    <td style="color:var(--c-loss); font-weight:600;">${p.losses}</td>
                     <td style="color:var(--text-muted); font-weight:600;">${p.byeCount}</td>
                 </tr>
             `;
@@ -1735,7 +1756,7 @@
                     <div class="history-round-title">Round ${r.round} Results${r.type === 'challenge' ? ' · ⚡ Challenge round' : r.type === 'americano' ? ' · Americano mix' : ''}</div>`;
                 
                 r.matches.forEach(m => {
-                    html += `<div style="margin-bottom: 8px; border-bottom: 1px solid rgba(15,128,137,.18); padding-bottom: 4px;">
+                    html += `<div style="margin-bottom: 8px; border-bottom: 1px solid var(--line); padding-bottom: 4px;">
                         <div class="history-court-line">
                             <strong>Court ${m.court}:</strong>
                             <span>${m.team1} <strong>(${m.score1})</strong> vs <strong>(${m.score2})</strong> ${m.team2}</span>
@@ -1808,12 +1829,21 @@
     }
 
     function resetTournament() {
-        if (confirm("Return to main menu? (The tournament will stay saved in your archives and can be resumed anytime).")) {
-            autoSaveCurrentTournament();
-            document.getElementById('tournament-screen').classList.add('hidden');
-            document.getElementById('setup-screen').classList.remove('hidden');
-            updateArchiveCountBadge();
-        }
+        if (!tournamentId) return;
+        const everywhere = window.CloudSync && CloudSync.hasKey();
+        if (!confirm(`Delete "${tournamentName}"? All its rounds and scores will be removed${everywhere ? ', also from the online database and player stats' : ''}. This cannot be undone.\n\nTo keep it, press Cancel and use "Save & exit" instead.`)) return;
+        const id = tournamentId;
+        saveTournamentsToStorage(getSavedTournaments().filter(t => t.id !== id));
+        if (window.CloudSync) CloudSync.queueDelete(id);
+        tournamentId = '';
+        participants = [];
+        roundActiveMatches = [];
+        sittingOutThisRound = [];
+        matchHistoryLog = [];
+        isTournamentFinished = false;
+        document.getElementById('tournament-screen').classList.add('hidden');
+        document.getElementById('setup-screen').classList.remove('hidden');
+        updateArchiveCountBadge();
     }
 
     // ---------------- ARCHIVE VAULT & RESUME LOGIC ----------------
@@ -1831,30 +1861,45 @@
     }
 
     function renderSavedTournamentsList() {
-        const list = getSavedTournaments();
+        const all = getSavedTournaments();
         const container = document.getElementById('saved-tournaments-list');
+        const filter = window.archiveFilter || 'all';
+        const list = all.filter(t => filter === 'all' || (filter === 'done' ? t.isFinished : !t.isFinished));
+        const label = document.getElementById('archiveCountLabel');
+        if (label) label.textContent = list.length === all.length ? `${all.length} saved` : `${list.length} of ${all.length}`;
 
         if (list.length === 0) {
-            container.innerHTML = '<p style="text-align:center; color:var(--text-muted); padding:30px 0;">No tournaments saved yet. Run a tournament and it will automatically be stored here.</p>';
+            container.innerHTML = `<p class="empty-state">${all.length === 0
+                ? 'No tournaments saved yet. Run a tournament and it will automatically be stored here.'
+                : 'No tournaments match this filter.'}</p>`;
             return;
         }
 
-        container.innerHTML = list.map((t, idx) => {
+        const MONTHS = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+        container.innerHTML = list.map(t => {
             const roundsPlayed = t.totalRoundsPlayed !== undefined ? t.totalRoundsPlayed : (t.totalRounds || 0);
             const currentRnd = t.currentRound || (roundsPlayed + 1);
-            const unit = isTeamFormat(t.format) ? "Teams" : "Players";
-            const statusBadge = t.recorded ? `<span class="badge" style="background:#6b7c93;">Recorded</span>`
-                : (t.isFinished ? `<span class="badge" style="background:#1f9d55;">Completed</span>` : `<span class="badge-status">Rd ${currentRnd}</span>`);
+            const unit = isTeamFormat(t.format) ? "teams" : "players";
+            const count = t.participants ? t.participants.length : (t.players ? t.players.length : 0);
+            const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(t.date || '');
+            const day = m ? m[3] : '--', mon = m ? MONTHS[parseInt(m[2], 10) - 1] : '';
+            const isLive = !t.isFinished && !t.recorded && t.id === tournamentId && participants.length > 0;
+            const statusBadge = t.recorded ? `<span class="chip chip-grey">Recorded</span>`
+                : t.isFinished ? `<span class="chip chip-green">Completed</span>`
+                : isLive ? `<span class="chip chip-lime">● Live · Rd ${currentRnd}</span>`
+                : `<span class="badge-status">In progress · Rd ${currentRnd}</span>`;
+            const fmtName = t.format.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
             return `
-                <div class="archive-card">
+                <div class="archive-card${isLive ? ' is-live' : ''}">
+                    <div class="date-block"><b>${day}</b><small>${mon}</small></div>
                     <div class="archive-info">
-                        <h4>${t.name} ${statusBadge} <span class="badge-winner">Winner: ${t.winner || 'None'}</span>${t._synced ? ' <span class="badge-cloud" title="Saved in the online database">☁ Saved online</span>' : ''}</h4>
-                        <div class="archive-meta">
-                            📅 ${t.date} &nbsp;|&nbsp; 🎾 ${t.format.toUpperCase().replace(/-/g, ' ')} &nbsp;|&nbsp; 🏅 ${t.recorded ? 'Final table only' : roundsPlayed + ' Completed Rounds'} &nbsp;|&nbsp; 👥 ${t.participants ? t.participants.length : (t.players ? t.players.length : 0)} ${unit} &nbsp;|&nbsp; 🏟️ ${t.totalCourts} Courts
-                        </div>
+                        <h4>${t.name}</h4>
+                        <div class="archive-meta">${fmtName} · ${t.maxPoints || 16} pts · ${t.date}</div>
+                        <div class="archive-chips">${statusBadge}${t.winner && t.winner !== 'None' ? `<span class="badge-winner">${t.isFinished ? '🏆 ' : 'Leader: '}${t.winner}</span>` : ''}${t._synced ? '<span class="badge-cloud" title="Saved in the online database">☁ Saved online</span>' : ''}</div>
                     </div>
+                    <div class="archive-foot"><span>${count} ${unit} · ${t.totalCourts} ${t.totalCourts == 1 ? 'court' : 'courts'}</span><span>${t.recorded ? 'Final table only' : roundsPlayed + ' rounds played'}</span></div>
                     <div class="archive-actions">
-                        ${t.recorded ? '' : `<button class="action-btn btn-resume-sm" onclick="resumeTournamentById('${t.id}')">${t.isFinished ? 'View / Reopen' : 'Resume'}</button>`}
+                        ${t.recorded ? '' : `<button class="action-btn btn-resume-sm" onclick="resumeTournamentById('${t.id}', true)">${t.isFinished ? 'Continue playing' : 'Resume'}</button>`}
                         <button class="action-btn btn-view-sm" onclick="viewTournamentDetails('${t.id}')">View</button>
                         <button class="action-btn btn-delete-sm" onclick="deleteTournamentRecord('${t.id}')">Delete</button>
                     </div>
@@ -1863,7 +1908,7 @@
         }).join('');
     }
 
-    function resumeTournamentById(id) {
+    function resumeTournamentById(id, reopen = false) {
         const list = getSavedTournaments();
         const t = list.find(x => x.id === id);
         if (!t) return;
@@ -1872,7 +1917,7 @@
         if (t._slim) {
             if (!window.CloudSync) return;
             CloudSync.loadFull(id).then(ok => ok
-                ? resumeTournamentById(id)
+                ? resumeTournamentById(id, reopen)
                 : alert("This tournament's full data is in the online database. Connect to the internet to reopen it."));
             return;
         }
@@ -1894,6 +1939,7 @@
         teamOpponentCount = t.teamOpponentCount || {};
         lastTeamOpponentRound = t.lastTeamOpponentRound || {};
         hybridState = format === 'hybrid' ? { ...newHybridState(), ...(t.hybridState || {}) } : null;
+        playingExtraRounds = !!t.playingExtraRounds;
 
         // Tournaments saved before raw scores were tracked: rebuild them as points minus earlier rest awards.
         participants.forEach(p => { p.rawPoints = getRawPoints(p, matchHistoryLog); });
@@ -1918,6 +1964,33 @@
         }
 
         appendHistoryView();
+        if (reopen && isTournamentFinished) reopenTournament();
+    }
+
+    // Finished tournaments can be reopened: the champion is cleared and play continues with the
+    // next round. Finishing again crowns the leader at that point.
+    function reopenTournament() {
+        if (!isTournamentFinished) return;
+        if (!confirm("Reopen this tournament and keep playing? Scores so far are kept, and the champion is decided again when you finish.")) return;
+        isTournamentFinished = false;
+        if (format === 'americano' || format === 'team-americano') playingExtraRounds = true;
+        const lastPlayed = matchHistoryLog.length ? Math.max(...matchHistoryLog.map(r => r.round || 0)) : 0;
+        if (lastPlayed >= currentRound || !roundActiveMatches || roundActiveMatches.length === 0) {
+            currentRound = lastPlayed + 1;
+            roundActiveMatches = [];
+            sittingOutThisRound = [];
+        }
+        launchTournamentScreen();
+        if (roundActiveMatches.length > 0) {
+            document.getElementById('round-title').innerText = 'Round ' + currentRound;
+            document.getElementById('multiplier-info').innerText = roundInfoText();
+            renderRoundLayout();
+            renderLeaderboard();
+        } else {
+            generateRound();
+        }
+        appendHistoryView();
+        autoSaveCurrentTournament();
     }
 
     function deleteTournamentRecord(id) {
@@ -1945,7 +2018,7 @@
 
         document.getElementById('view-archive-title').innerText = t.name;
         const roundsPlayed = t.totalRoundsPlayed !== undefined ? t.totalRoundsPlayed : (t.totalRounds || 0);
-        document.getElementById('view-archive-meta').innerText = `${t.format.toUpperCase().replace(/-/g, ' ')} | Date: ${t.date} | Target: ${t.maxPoints} pts | Courts: ${t.totalCourts} | Completed Rounds: ${roundsPlayed}`;
+        document.getElementById('view-archive-meta').innerText = `${t.date} · ${t.format.toUpperCase().replace(/-/g, ' ')} · ${roundsPlayed} rounds`;
 
         let displayList = [...(t.participants || t.players || [])].sort((a, b) => {
             if (t.format === 'beat-the-box' && a.currentBox && b.currentBox && a.currentBox !== b.currentBox) {
@@ -1962,20 +2035,20 @@
         document.getElementById('view-archive-leaderboard').innerHTML = displayList.map((p, idx) => {
             const diff = shownDiff(p.points, p.pointsLost || 0);
             const diffSign = diff > 0 ? '+' : '';
-            const boxBadge = t.format === 'beat-the-box' ? `<span class="badge" style="background:#3b82f6; margin-left:6px;">Box ${p.currentBox || '-'}</span>` : '';
+            const boxBadge = t.format === 'beat-the-box' ? `<span class="badge" style="background:var(--c-box); margin-left:6px;">Box ${p.currentBox || '-'}</span>` : '';
             const isWinner = t.isFinished && idx === 0;
             return `
-                <tr style="${isWinner ? 'background: rgba(245, 158, 11, 0.12);' : ''}">
+                <tr style="${isWinner ? 'background: var(--gold-row);' : ''}">
                     <td><strong>${isWinner ? '👑 #1' : `#${idx + 1}`}</strong></td>
                     <td><strong>${p.name}</strong>${boxBadge}</td>
                     <td style="font-weight:bold; color:var(--accent);">${ptsCell(p.points)}</td>
                     ${thirdColumnCell(p, t.format, t.matchHistory, t.hybridState)}
-                    <td style="font-weight:bold; color:#d63a5a;">${ptsCell(p.pointsLost)}</td>
-                    <td style="font-weight:600; color:${diff >= 0 ? '#0e7a82' : '#d63a5a'};">${diffSign}${diff}</td>
+                    <td style="font-weight:bold; color:var(--c-loss);">${ptsCell(p.pointsLost)}</td>
+                    <td style="font-weight:600; color:${diff >= 0 ? 'var(--c-pos)' : 'var(--c-loss)'};">${diffSign}${diff}</td>
                     <td>${p.roundsPlayed}</td>
-                    <td style="color:#1f9d55; font-weight:600;">${p.wins || 0}</td>
-                    <td style="color:#b7860b; font-weight:600;">${p.ties || 0}</td>
-                    <td style="color:#d63a3a; font-weight:600;">${p.losses || 0}</td>
+                    <td style="color:var(--c-win); font-weight:600;">${p.wins || 0}</td>
+                    <td style="color:var(--c-tie); font-weight:600;">${p.ties || 0}</td>
+                    <td style="color:var(--c-loss); font-weight:600;">${p.losses || 0}</td>
                     <td style="color:var(--text-muted); font-weight:600;">${p.byeCount || 0}</td>
                 </tr>
             `;
@@ -1993,7 +2066,7 @@
                 <div class="history-round-title">Round ${r.round} Results${r.type === 'challenge' ? ' · ⚡ Challenge round' : r.type === 'americano' ? ' · Americano mix' : ''}</div>`;
             
             r.matches.forEach(m => {
-                html += `<div style="margin-bottom: 8px; border-bottom: 1px solid rgba(15,128,137,.18); padding-bottom: 4px;">
+                html += `<div style="margin-bottom: 8px; border-bottom: 1px solid var(--line); padding-bottom: 4px;">
                     <div class="history-court-line">
                         <strong>Court ${m.court}:</strong>
                         <span>${m.team1} <strong>(${m.score1})</strong> vs <strong>(${m.score2})</strong> ${m.team2}</span>
@@ -2017,7 +2090,7 @@
 
     function resumeFromViewModal() {
         if (!currentlyViewingArchiveId) return;
-        resumeTournamentById(currentlyViewingArchiveId);
+        resumeTournamentById(currentlyViewingArchiveId, true);
     }
 
     function closeArchiveViewer() {

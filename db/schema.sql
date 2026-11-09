@@ -79,6 +79,14 @@ DO $$
    END IF;
  END $$;
 
+CREATE TABLE IF NOT EXISTS player_photos (
+  kind       TEXT NOT NULL CHECK (kind IN ('player', 'team')),
+  name_key   TEXT NOT NULL,
+  data       TEXT,
+  updated_at TIMESTAMPTZ NOT NULL,
+  PRIMARY KEY (kind, name_key)
+);
+
 CREATE OR REPLACE VIEW player_career_stats AS
   SELECT p.id,
          p.kind,

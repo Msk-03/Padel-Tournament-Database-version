@@ -13,6 +13,13 @@
  */
 const STORAGE_KEY = "padel_saved_tournaments_v5";
 
+// Names are shown and saved with every word capitalised: "marzouq al hassan" → "Marzouq Al Hassan",
+// "ali & omar" → "Ali & Omar", "al-noor" → "Al-Noor". The rest of each word is kept as typed.
+function titleCaseName(str) {
+    return String(str == null ? '' : str).trim().replace(/\s+/g, ' ')
+        .replace(/(^|[\s&\-'(/])(\p{Ll})/gu, (m, a, b) => a + b.toLocaleUpperCase());
+}
+
 function getSavedTournaments() {
     try {
         return JSON.parse(localStorage.getItem(STORAGE_KEY)) || [];
@@ -29,6 +36,9 @@ function saveTournamentsToStorage(list) {
 window.CloudSync = (() => {
     const KEY_STORE = 'padel_organiser_key';
     const DELETED_STORE = 'padel_sync_deleted_v1';
+    // Player photos: { "player:ali hassan": { data, updatedAt, synced } }. data null = removed.
+    const PHOTO_STORE = 'padel_player_photos_v1';
+    const PHOTO_SINCE = 'padel_player_photos_since_v1';
     const API = './api';
     // Fields only needed to resume play. Finished, already-uploaded tournaments
     // can drop them if the device runs out of storage; they are re-downloaded on resume.
@@ -49,6 +59,55 @@ window.CloudSync = (() => {
     const getKey = () => { try { return localStorage.getItem(KEY_STORE) || ''; } catch (e) { return ''; } };
     const getDeleted = () => { try { return JSON.parse(localStorage.getItem(DELETED_STORE)) || []; } catch (e) { return []; } };
     const setDeleted = list => { try { localStorage.setItem(DELETED_STORE, JSON.stringify(list)); } catch (e) {} };
+
+    /* ---------- player photos ---------- */
+    const photoKey = (kind, name) => kind + ':' + String(name).trim().replace(/\s+/g, ' ').toLowerCase();
+    const readPhotos = () => { try { return JSON.parse(localStorage.getItem(PHOTO_STORE)) || {}; } catch (e) { return {}; } };
+    function writePhotos(all) {
+        try { localStorage.setItem(PHOTO_STORE, JSON.stringify(all)); return true; }
+        catch (e) { alert('This device is out of storage space for photos. Remove some photos or old tournaments.'); return false; }
+    }
+    function getPhoto(kind, name) { const p = readPhotos()[photoKey(kind, name)]; return p && p.data ? p.data : null; }
+    // data: a data: URL, or null to remove the photo.
+    function setPhoto(kind, name, data) {
+        const all = readPhotos();
+        all[photoKey(kind, name)] = { data: data || null, updatedAt: new Date().toISOString(), synced: false };
+        if (!writePhotos(all)) return false;
+        queueSave();
+        return true;
+    }
+    async function pushPhotos() {
+        const all = readPhotos();
+        for (const [k, p] of Object.entries(all)) {
+            if (p.synced) continue;
+            const i = k.indexOf(':');
+            await api('/photos', { method: 'PUT', body: JSON.stringify({ kind: k.slice(0, i), key: k.slice(i + 1), data: p.data, updatedAt: p.updatedAt }) });
+            const now = readPhotos();
+            if (now[k] && now[k].updatedAt === p.updatedAt) { now[k].synced = true; writePhotos(now); }
+        }
+    }
+    async function pullPhotos() {
+        let since = '';
+        try { since = localStorage.getItem(PHOTO_SINCE) || ''; } catch (e) {}
+        let data;
+        try { data = await api('/photos' + (since ? '?since=' + encodeURIComponent(since) : '')); }
+        catch (e) { if (e.status === 404 || e.status === 405) return false; throw e; }
+        const remote = (data && data.photos) || [];
+        if (!remote.length) return false;
+        const all = readPhotos();
+        let latest = since, changedAny = false;
+        for (const r of remote) {
+            const k = r.kind + ':' + r.key, cur = all[k];
+            if (!cur || cur.synced || Date.parse(r.updated_at) > Date.parse(cur.updatedAt)) {
+                all[k] = { data: r.data || null, updatedAt: r.updated_at, synced: true };
+                changedAny = true;
+            }
+            if (!latest || r.updated_at > latest) latest = r.updated_at;
+        }
+        if (changedAny) writePhotos(all);
+        try { localStorage.setItem(PHOTO_SINCE, latest); } catch (e) {}
+        return changedAny;
+    }
 
     function slimOne(list) {
         const candidates = list
@@ -214,6 +273,8 @@ window.CloudSync = (() => {
                 if (canWrite()) await pushDeletes();
                 let dataChanged = await pull();
                 if (canWrite() && await pushSaves()) dataChanged = (await pull()) || dataChanged;
+                if (canWrite()) await pushPhotos();
+                dataChanged = (await pullPhotos()) || dataChanged;
                 state.lastSync = Date.now();
                 state.error = '';
                 if (dataChanged && typeof updateArchiveCountBadge === 'function') updateArchiveCountBadge();
@@ -276,7 +337,7 @@ window.CloudSync = (() => {
     }
 
     function status() {
-        const pending = getSavedTournaments().filter(t => !t._synced).length;
+        const pending = getSavedTournaments().filter(t => !t._synced).length + Object.values(readPhotos()).filter(p => !p.synced).length;
         const s = state;
         if (s.api === 'checking') return { tone: 'idle', label: 'Connecting…', detail: 'Looking for the online database.' };
         if (s.api === 'none') return { tone: 'idle', label: 'This device only', detail: 'This site has no database connected, so tournaments are saved on this device only.' };
@@ -301,5 +362,5 @@ window.CloudSync = (() => {
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => syncNow());
     else syncNow();
 
-    return { writeLocal, queueSave, queueDelete, loadFull, syncNow, setKey, status, hasKey: () => !!getKey(), canWrite, state };
+    return { getPhoto, setPhoto, writeLocal, queueSave, queueDelete, loadFull, syncNow, setKey, status, hasKey: () => !!getKey(), canWrite, state };
 })();
