@@ -4,7 +4,7 @@
 window.Players = (() => {
     const $ = id => document.getElementById(id);
     const TEAM_FORMATS = ['team-mexicano', 'team-americano', 'beat-the-box'];
-    const ui = { kind: 'player', group: 'main', includeUnfinished: false, query: '', sort: 'rank', dir: 1, open: null };
+    const ui = { from: '', to: '', kind: 'player', group: 'main', includeUnfinished: false, query: '', sort: 'rank', dir: 1, open: null };
     // The main leaderboard only lists players with at least this many matches; "All players" lists everyone.
     const minMatches = () => (typeof window.PLAYER_MIN_MATCHES === 'number' ? window.PLAYER_MIN_MATCHES : 30);
 
@@ -36,6 +36,7 @@ window.Players = (() => {
             const kind = TEAM_FORMATS.includes(t.format) ? 'team' : 'player';
             kindsSeen.add(kind);
             if (kind !== ui.kind || (!t.isFinished && !ui.includeUnfinished)) continue;
+            if ((ui.from && (t.date || '') < ui.from) || (ui.to && (t.date || '9999') > ui.to)) continue;
             const order = ranked(t), seen = new Set();
             // 1.0x points: match points with no multipliers and no rest points. Older saves without
             // rawPoints: total points minus rest awards from the match history.
@@ -215,7 +216,8 @@ window.Players = (() => {
         $('pl-help').textContent = (ui.group === 'main'
             ? `${unit === 'team' ? 'Teams' : 'Players'} with ${min}+ matches`
             : `Everyone, whatever their number of matches`)
-            + ', ranked by win %, then titles, then points difference. Titles count completed tournaments only. Tap a card for details.';
+            + ', ranked by win %, then titles, then points difference. Titles count completed tournaments only. Tap a card for details.'
+            + (ui.from || ui.to ? ` Showing tournaments played ${periodText()}.` : '');
 
         $('pl-sorts').innerHTML = SORTS.map(([k, label]) =>
             `<button class="pl-sort ${ui.sort === k ? 'on' : ''}" data-sort="${k}">${label}${ui.sort === k && k !== 'rank' ? (ui.dir < 0 ? ' ↓' : ' ↑') : ''}</button>`).join('');
@@ -224,6 +226,7 @@ window.Players = (() => {
         if (!shown.length) {
             const msg = rows.length ? 'No one matches that search.'
                 : (allRows.length && ui.group === 'main') ? `Nobody has played ${min} matches yet. See “All players” for everyone.`
+                : (ui.from || ui.to) ? `No tournaments were played ${periodText()}. Pick a wider period.`
                 : (ui.includeUnfinished ? 'No tournaments saved yet. Results appear here as soon as you play.'
                                         : 'No completed tournaments yet. Finish a tournament, or tick “Include unfinished”.');
             list.innerHTML = `<p class="pl-empty">${msg}</p>`;
@@ -273,6 +276,33 @@ window.Players = (() => {
     }
     let currentRows = [];
 
+    /* ---------- period filter ---------- */
+    const iso = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const nice = s => { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }); };
+    function periodText() {
+        if (ui.from && ui.to) return `from ${nice(ui.from)} to ${nice(ui.to)}`;
+        return ui.from ? `from ${nice(ui.from)} onwards` : `up to ${nice(ui.to)}`;
+    }
+    function presetRange(v) {
+        const now = new Date(), y = now.getFullYear(), m = now.getMonth();
+        switch (v) {
+            case 'this-month': return [iso(new Date(y, m, 1)), iso(new Date(y, m + 1, 0))];
+            case 'last-month': return [iso(new Date(y, m - 1, 1)), iso(new Date(y, m, 0))];
+            case '3m': return [iso(new Date(y, m - 2, 1)), iso(now)];
+            case '6m': return [iso(new Date(y, m - 5, 1)), iso(now)];
+            case 'this-year': return [iso(new Date(y, 0, 1)), iso(new Date(y, 11, 31))];
+            default: return ['', ''];
+        }
+    }
+    function setPeriod(from, to, preset) {
+        if (from && to && from > to) [from, to] = [to, from];
+        ui.from = from; ui.to = to; ui.open = null;
+        $('pl-from').value = from; $('pl-to').value = to;
+        $('pl-range').value = preset || (from || to ? 'custom' : 'all');
+        $('pl-date-clear').hidden = !(from || to);
+        render();
+    }
+
     function openTournament(id) {
         $('players-screen').classList.add('hidden');
         viewTournamentDetails(id);
@@ -287,6 +317,15 @@ window.Players = (() => {
             const b = e.target.closest('button[data-group]');
             if (b) { ui.group = b.dataset.group; ui.open = null; render(); }
         });
+        $('pl-range').addEventListener('change', e => {
+            const v = e.target.value;
+            if (v === 'custom') { $('pl-from').focus(); return; }
+            const [f, t] = presetRange(v);
+            setPeriod(f, t, v);
+        });
+        $('pl-from').addEventListener('change', e => setPeriod(e.target.value, ui.to));
+        $('pl-to').addEventListener('change', e => setPeriod(ui.from, e.target.value));
+        $('pl-date-clear').addEventListener('click', () => setPeriod('', ''));
         $('pl-unfinished').addEventListener('change', e => { ui.includeUnfinished = e.target.checked; render(); });
         $('pl-search').addEventListener('input', e => { ui.query = e.target.value; render(); });
         $('pl-sorts').addEventListener('click', e => {

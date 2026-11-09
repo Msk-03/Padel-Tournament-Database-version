@@ -2,6 +2,8 @@
 
 ## 1.4.0 – 2026-11-09
 
+- Player stats period filter: All time, This month, Last month, Last 3 / 6 months, This year, or custom From / To dates. Stats, ranks and the 30-match leaderboard count only tournaments played in that period.
+
 - Two keys: `ADMIN_KEY` (organiser: create and play, add photos) and the new optional `MASTER_KEY` (also delete tournaments and matches, remove or rename players, change or remove photos). Enforced by the API; the app hides or blocks what your key can't do.
 - Daily clean-up (`/api/maintenance`, Vercel cron): when the database passes 300 MB, match history of finished tournaments older than 60 days is removed. Final scores are always kept.
 - Phones: the sidebar opens from a menu button (slightly see-through glass) instead of the bottom bar.

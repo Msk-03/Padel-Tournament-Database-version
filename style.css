@@ -618,3 +618,18 @@ input::placeholder{color:var(--muted);opacity:.7}
   #tournament-screen .metric b{font-size:21px}
   #tournament-screen .round-title{font-size:21px}
 }
+
+/* player stats: period filter */
+.pl-dates{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;margin:-8px 0 22px;padding:10px 14px;border:1px solid var(--line);border-radius:16px;background:var(--surface)}
+.pl-dates>svg{width:18px;height:18px;color:var(--num)}
+.pl-dates select{width:auto;height:38px;border-radius:19px;font-size:13px;background-position:calc(100% - 20px) 16px,calc(100% - 15px) 16px}
+.pl-date{display:inline-flex;align-items:center;gap:8px;margin:0;font-size:12px;font-weight:600;color:var(--muted)}
+.pl-date input{width:auto;height:38px;border-radius:19px;padding:0 12px;font-size:13px}
+.pl-date-clear{height:34px;padding:0 14px;border-radius:17px;font-size:12px;font-weight:600;color:var(--num);background:var(--chip-green-bg)}
+@media (max-width:759px){
+  .pl-dates{display:grid;grid-template-columns:auto 1fr;gap:10px}
+  .pl-dates select{width:100%}
+  .pl-date{grid-column:1/-1;display:grid;grid-template-columns:44px 1fr}
+  .pl-date input{width:100%}
+  .pl-date-clear{grid-column:1/-1}
+}

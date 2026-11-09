@@ -301,6 +301,21 @@
         <input type="search" id="pl-search" placeholder="Search by name" aria-label="Search by name" />
         <label class="pl-check"><input type="checkbox" id="pl-unfinished" /> Include unfinished</label>
       </div>
+      <div class="pl-dates" role="group" aria-label="Period">
+        <svg><use href="#i-calendar"/></svg>
+        <select id="pl-range" aria-label="Period">
+          <option value="all">All time</option>
+          <option value="this-month">This month</option>
+          <option value="last-month">Last month</option>
+          <option value="3m">Last 3 months</option>
+          <option value="6m">Last 6 months</option>
+          <option value="this-year">This year</option>
+          <option value="custom">Custom dates</option>
+        </select>
+        <label class="pl-date"><span>From</span><input type="date" id="pl-from"></label>
+        <label class="pl-date"><span>To</span><input type="date" id="pl-to"></label>
+        <button class="pl-date-clear" id="pl-date-clear" hidden>Clear</button>
+      </div>
       <div class="pl-headline">
         <h2 class="section-title"><span id="pl-title">Leaderboard</span> <span class="count" id="pl-count"></span></h2>
         <div class="pl-sorts" id="pl-sorts" role="group" aria-label="Sort by"></div>
