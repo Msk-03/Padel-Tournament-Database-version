@@ -2,6 +2,11 @@
 
 ## 1.4.0 – 2026-11-09
 
+- Two keys: `ADMIN_KEY` (organiser: create and play, add photos) and the new optional `MASTER_KEY` (also delete tournaments and matches, remove or rename players, change or remove photos). Enforced by the API; the app hides or blocks what your key can't do.
+- Daily clean-up (`/api/maintenance`, Vercel cron): when the database passes 300 MB, match history of finished tournaments older than 60 days is removed. Final scores are always kept.
+- Phones: the sidebar opens from a menu button (slightly see-through glass) instead of the bottom bar.
+- Live tournament page text is 2pt larger. Photo options moved to a quiet link under the player details; players without a photo show their initials.
+
 - New look based on the "rally" Figma design: light and dark themes, sidebar on desktop, icon strip on tablets, bottom navigation on phones.
 - Bigger player name boxes; one per line when there isn't room for two.
 - Modern buttons (larger, rounded, with icons). "Save & exit" keeps the tournament; "Delete tournament" removes it after confirming (the old "Abandon / exit" did the same as saving).

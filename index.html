@@ -62,14 +62,16 @@
     <symbol id="i-save" viewBox="0 0 24 24"><path d="M5 4.5h11l3.5 3.5v10.5a1.5 1.5 0 01-1.5 1.5H6a1.5 1.5 0 01-1.5-1.5V6A1.5 1.5 0 016 4.5z"/><path d="M8 4.5v4.5h7V4.5M8 20v-6h8v6"/></symbol>
     <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4.5 7h15M9.5 7V4.8h5V7M6.5 7l.8 12.2a1.5 1.5 0 001.5 1.3h6.4a1.5 1.5 0 001.5-1.3L17.5 7M10 11v6M14 11v6"/></symbol>
     <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M19.5 12a7.5 7.5 0 11-2.2-5.3M19.5 4.5v4h-4"/></symbol>
+    <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h10"/></symbol>
     <symbol id="i-chart" viewBox="0 0 24 24"><path d="M5 19V11M10 19V5M15 19v-6M20 19v-9"/></symbol>
   </defs>
 </svg>
 
 <div class="app">
 
-  <!-- ===== Sidebar (desktop / tablet) ===== -->
+  <!-- ===== Sidebar (desktop / tablet; slide-in menu on phones) ===== -->
   <aside class="sidebar" id="sidebar" aria-label="Main navigation">
+    <button class="side-close icon-btn" id="sideClose" aria-label="Close menu"><svg><use href="#i-close"/></svg></button>
     <div class="brand">
       <svg class="brand-icon"><use href="#i-court"/></svg>
       <span class="brand-name">Padel<b>Center</b></span>
@@ -111,6 +113,7 @@
     <!-- ===== Page header ===== -->
     <header class="page-head">
       <div class="mobile-bar">
+        <button class="icon-btn menu-btn" id="menuBtn" aria-label="Open menu" aria-controls="sidebar" aria-expanded="false"><svg><use href="#i-menu"/></svg></button>
         <div class="brand brand-sm"><svg class="brand-icon"><use href="#i-court"/></svg><span class="brand-name">Padel<b>Center</b></span></div>
         <div class="mobile-actions">
           <button class="icon-btn" id="themeBtnMobile" aria-label="Switch light / dark theme"><svg class="only-light"><use href="#i-moon"/></svg><svg class="only-dark"><use href="#i-sun"/></svg></button>
@@ -343,14 +346,7 @@
     </section>
   </main>
 
-  <!-- ===== Bottom navigation (phones) ===== -->
-  <nav class="bottom-nav" id="bottomNav" aria-label="Main navigation">
-    <button class="nav-item" data-nav="setup"><svg><use href="#i-plus-circle"/></svg><span>New</span></button>
-    <button class="nav-item" data-nav="live"><svg><use href="#i-play"/></svg><span>Live</span><i class="live-dot" id="liveDotMobile" hidden></i></button>
-    <button class="nav-item" data-nav="vault"><svg><use href="#i-archive"/></svg><span>Archive</span></button>
-    <button class="nav-item" data-nav="players"><svg><use href="#i-users"/></svg><span>Stats</span></button>
-    <button class="nav-item" data-nav="record"><svg><use href="#i-record"/></svg><span>Record</span></button>
-  </nav>
+  <div class="scrim" id="scrim" hidden></div>
 </div>
 
 <dialog class="sync-dialog" id="syncDialog" aria-labelledby="syncTitle">
@@ -358,9 +354,9 @@
     <p class="eyebrow">SYNC</p>
     <h2 id="syncTitle">Online database</h2>
     <p class="sync-status"><i class="sync-dot" id="syncDialogDot" data-tone="idle"></i><span id="syncDetail"></span></p>
-    <label for="syncKey">Organiser key</label>
-    <input type="password" id="syncKey" autocomplete="current-password" placeholder="Needed to save tournaments to the database" />
-    <p class="helper-text" id="syncKeyHelp">Everyone can view the archive and player stats. Only devices with the organiser key can add, change or delete tournaments.</p>
+    <label for="syncKey">Organiser or master key</label>
+    <input type="password" id="syncKey" autocomplete="current-password" placeholder="Organiser or master key" />
+    <p class="helper-text" id="syncKeyHelp">Everyone can view the archive and player stats. The <b>organiser key</b> lets a device create and save tournaments and add photos. Only the <b>master key</b> can delete tournaments or matches and change or remove photos.</p>
     <div class="sync-actions">
       <button type="button" class="btn btn-ghost" id="syncForget">Remove key</button>
       <button type="button" class="btn btn-ghost" id="syncNowBtn">Sync now</button>

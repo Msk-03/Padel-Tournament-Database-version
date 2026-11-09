@@ -1,9 +1,10 @@
 // /api/tournaments
 //   GET                → summaries of every saved tournament (public)
 //   GET ?ids=a,b,c     → full saved records for up to 25 tournaments (public)
-//   PUT  {record}      → create or update one tournament (organiser key)
-//   DELETE ?id=x       → delete one tournament and its results (organiser key)
-import { getSql, json, route, requireAuth, normalizeRecord, isValidId, HttpError } from './_lib/db.js';
+//   PUT  {record}      → create or update one tournament (organiser key; removing matches or
+//                        players from a saved tournament needs the master key)
+//   DELETE ?id=x       → delete one tournament and its results (master key)
+import { getSql, json, route, requireAuth, requireMaster, normalizeRecord, isValidId, nameKey, HttpError } from './_lib/db.js';
 
 const MAX_BODY = 3_000_000;
 const LOCAL_FIELDS = ['_synced', '_slim'];
@@ -26,13 +27,27 @@ async function getMany(sql, idsParam) {
   return rows.map(r => (typeof r.state === 'string' ? JSON.parse(r.state) : r.state));
 }
 
-async function save(sql, request) {
+async function save(sql, request, role) {
   const length = Number(request.headers.get('content-length') || 0);
   if (length > MAX_BODY) throw new HttpError(413, 'Tournament is too large to save.');
   let record;
   try { record = await request.json(); } catch { throw new HttpError(400, 'Body must be JSON.'); }
 
   const { tournament: t, kind, entries, matches } = normalizeRecord(record);
+
+  // The organiser key may add to a saved tournament but not take anything away.
+  if (role !== 'master') {
+    const [cur] = await sql`
+      SELECT (SELECT count(*)::int FROM matches WHERE tournament_id = ${t.id}) AS match_count,
+             state->'participants' AS participants, updated_at
+        FROM tournaments WHERE id = ${t.id}`;
+    if (cur && new Date(cur.updated_at) <= new Date(t.updatedAt)) {
+      const before = (typeof cur.participants === 'string' ? JSON.parse(cur.participants) : cur.participants) || [];
+      const now = new Set(entries.map(e => e.key));
+      if (matches.length < cur.match_count) throw new HttpError(403, 'Only the master key can delete matches from a saved tournament.');
+      if (before.some(p => p && p.name && !now.has(nameKey(p.name)))) throw new HttpError(403, 'Only the master key can remove or rename players in a saved tournament.');
+    }
+  }
   const state = { ...record };
   LOCAL_FIELDS.forEach(f => delete state[f]);
 
@@ -112,10 +127,9 @@ export default {
       }
       case 'PUT':
       case 'POST':
-        requireAuth(request);
-        return json(await save(await getSql(), request));
+        return json(await save(await getSql(), request, requireAuth(request)));
       case 'DELETE':
-        requireAuth(request);
+        requireMaster(request);
         return json(await remove(await getSql(), url));
       default:
         return json({ error: 'Method not allowed' }, 405);

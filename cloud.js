@@ -49,6 +49,8 @@ window.CloudSync = (() => {
         api: 'checking',       // checking | up | none | offline | error
         writeEnabled: false,   // server has an ADMIN_KEY
         authorized: false,     // this device's key is correct
+        role: (() => { try { return localStorage.getItem('padel_key_role') || null; } catch (e) { return null; } })(), // 'master' | 'organiser' | null
+        masterEnabled: false,  // server has a separate MASTER_KEY
         busy: false,
         error: '',
         lastSync: 0
@@ -67,6 +69,15 @@ window.CloudSync = (() => {
         try { localStorage.setItem(PHOTO_STORE, JSON.stringify(all)); return true; }
         catch (e) { alert('This device is out of storage space for photos. Remove some photos or old tournaments.'); return false; }
     }
+    // Deleting (tournaments, matches) and changing or removing photos needs the master key once
+    // something is in the online database. Things only on this device can always be deleted.
+    const isMaster = () => !!getKey() && state.role === 'master';
+    const MASTER_ONLY = 'Only the master key can delete or change things saved in the online database. Ask the person who holds it.';
+    function mayDeleteTournament(rec) { return !rec || !rec._synced || state.api === 'none' || isMaster(); }
+    function mayChangePhoto(kind, name) {
+        const p = readPhotos()[photoKey(kind, name)];
+        return !p || !p.data || !p.synced || state.api === 'none' || isMaster();
+    }
     function getPhoto(kind, name) { const p = readPhotos()[photoKey(kind, name)]; return p && p.data ? p.data : null; }
     // data: a data: URL, or null to remove the photo.
     function setPhoto(kind, name, data) {
@@ -81,7 +92,16 @@ window.CloudSync = (() => {
         for (const [k, p] of Object.entries(all)) {
             if (p.synced) continue;
             const i = k.indexOf(':');
-            await api('/photos', { method: 'PUT', body: JSON.stringify({ kind: k.slice(0, i), key: k.slice(i + 1), data: p.data, updatedAt: p.updatedAt }) });
+            try {
+                await api('/photos', { method: 'PUT', body: JSON.stringify({ kind: k.slice(0, i), key: k.slice(i + 1), data: p.data, updatedAt: p.updatedAt }) });
+            } catch (e) {
+                if (e.status !== 403) throw e;
+                // Refused: forget the local change and download every photo again.
+                state.notice = e.message;
+                const now = readPhotos(); delete now[k]; writePhotos(now);
+                try { localStorage.removeItem(PHOTO_SINCE); } catch (err) {}
+                continue;
+            }
             const now = readPhotos();
             if (now[k] && now[k].updatedAt === p.updatedAt) { now[k].synced = true; writePhotos(now); }
         }
@@ -172,6 +192,9 @@ window.CloudSync = (() => {
             state.api = 'up';
             state.writeEnabled = !!h.writeEnabled;
             state.authorized = !!h.authorized;
+            state.masterEnabled = !!h.masterEnabled;
+            state.role = h.authorized ? (h.role || 'master') : null;
+            try { state.role ? localStorage.setItem('padel_key_role', state.role) : localStorage.removeItem('padel_key_role'); } catch (e) {}
             state.error = '';
         } catch (e) {
             if (e.status === 404 || e.status === 405) state.api = 'none';           // static host, no API
@@ -189,7 +212,9 @@ window.CloudSync = (() => {
             try {
                 await api('/tournaments?id=' + encodeURIComponent(id), { method: 'DELETE' });
             } catch (e) {
-                if (e.status !== 400) throw e; // invalid id: drop it below
+                // 400 invalid id / 403 not allowed: drop it; a refused delete comes back on the next download.
+                if (e.status !== 400 && e.status !== 403) throw e;
+                if (e.status === 403) state.notice = e.message;
             }
             setDeleted(getDeleted().filter(x => x !== id));
         }
@@ -199,7 +224,18 @@ window.CloudSync = (() => {
         let anyStale = false;
         const pending = getSavedTournaments().filter(t => !t._synced && !t._slim);
         for (const rec of pending) {
-            const res = await api('/tournaments', { method: 'PUT', body: JSON.stringify(rec) });
+            let res;
+            try {
+                res = await api('/tournaments', { method: 'PUT', body: JSON.stringify(rec) });
+            } catch (e) {
+                if (e.status !== 403) throw e;
+                // Refused (the change would delete matches or players): take the database copy back.
+                state.notice = e.message;
+                const list = getSavedTournaments(), cur = list.find(t => t.id === rec.id);
+                if (cur) { cur._synced = true; cur.updatedAt = '1970-01-01T00:00:00.000Z'; writeLocal(list); }
+                anyStale = true;
+                continue;
+            }
             if (res && res.stale) anyStale = true;
             // Mark as synced only if nothing changed locally while uploading.
             const list = getSavedTournaments();
@@ -266,7 +302,7 @@ window.CloudSync = (() => {
     async function syncNow() {
         if (running) { again = true; return running; }
         running = (async () => {
-            state.busy = true; changed();
+            state.busy = true; state.notice = ''; changed();
             try {
                 await checkHealth();
                 if (state.api !== 'up') return;
@@ -349,8 +385,11 @@ window.CloudSync = (() => {
                 ? { tone: 'idle', label: 'View only', detail: 'You can see every tournament in the database. Enter the organiser key to save new tournaments to it.' }
                 : { tone: 'idle', label: 'View only', detail: 'Saving to the database is switched off (no ADMIN_KEY is set on the server).' };
         }
-        if (pending) return { tone: 'warn', label: `${pending} to upload`, detail: 'Some changes have not reached the database yet.' };
-        return { tone: 'good', label: 'Synced', detail: 'All tournaments on this device are saved in the database.' };
+        const keyName = s.role === 'master' ? (s.masterEnabled ? 'Master key' : 'Organiser key (full access)') : 'Organiser key';
+        const rights = s.role === 'master' ? 'You can create, change and delete everything.' : 'You can create tournaments and add photos; deleting needs the master key.';
+        const note = s.notice ? ' ' + s.notice : '';
+        if (pending) return { tone: 'warn', label: `${pending} to upload`, detail: `${keyName}. Some changes have not reached the database yet.${note}` };
+        return { tone: 'good', label: s.role === 'master' && s.masterEnabled ? 'Synced · master' : 'Synced', detail: `${keyName}: ${rights} All tournaments on this device are saved in the database.${note}` };
     }
 
     window.addEventListener('online', () => syncNow());
@@ -362,5 +401,5 @@ window.CloudSync = (() => {
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => syncNow());
     else syncNow();
 
-    return { getPhoto, setPhoto, writeLocal, queueSave, queueDelete, loadFull, syncNow, setKey, status, hasKey: () => !!getKey(), canWrite, state };
+    return { MASTER_ONLY, mayDeleteTournament, mayChangePhoto, isMaster, getPhoto, setPhoto, writeLocal, queueSave, queueDelete, loadFull, syncNow, setKey, status, hasKey: () => !!getKey(), canWrite, state };
 })();

@@ -82,7 +82,7 @@
   }
   $('tournament-type').addEventListener('change', formatCard);
   $('tipLink').addEventListener('click', e => {
-    showScreen('setup-screen'); sync();
+    setMenu(false); showScreen('setup-screen'); sync();
     requestAnimationFrame(() => { $('formatCard').scrollIntoView({ behavior: 'smooth', block: 'center' }); toggleFormatBubble(e); });
   });
 
@@ -95,7 +95,7 @@
       on ? b.setAttribute('aria-current', 'page') : b.removeAttribute('aria-current');
       if (b.dataset.nav === 'live') b.classList.toggle('disabled', !hasLive());
     });
-    $('liveDot').hidden = $('liveDotMobile').hidden = !live;
+    $('liveDot').hidden = !live;
     const [t, s] = TITLES[cur];
     $('pageTitle').textContent = t;
     $('pageSub').textContent = s;
@@ -116,10 +116,32 @@
     else { showScreen('vault-screen'); openVaultScreen(); }
     sync();
   }
-  [$('sidebar'), $('bottomNav')].forEach(el => el.addEventListener('click', e => {
+  $('sidebar').addEventListener('click', e => {
     const b = e.target.closest('.nav-item[data-nav]');
-    if (b && !b.classList.contains('disabled')) go(b.dataset.nav);
-  }));
+    if (b && !b.classList.contains('disabled')) { go(b.dataset.nav); setMenu(false); }
+  });
+
+  /* ----- phones: the sidebar slides in from the menu button ----- */
+  const phone = window.matchMedia('(max-width: 759px)');
+  const sidebar = $('sidebar'), scrim = $('scrim'), menuBtn = $('menuBtn');
+  const syncInert = () => sidebar.toggleAttribute('inert', phone.matches && !sidebar.classList.contains('open'));
+  function setMenu(open) {
+    if (!phone.matches) open = false;
+    if (open === sidebar.classList.contains('open')) return syncInert();
+    sidebar.classList.toggle('open', open);
+    scrim.hidden = !open;
+    requestAnimationFrame(() => scrim.classList.toggle('show', open));
+    document.body.classList.toggle('menu-open', open);
+    menuBtn.setAttribute('aria-expanded', String(open));
+    syncInert();
+    (open ? sidebar.querySelector('.nav-item.active') || sidebar.querySelector('.nav-item') : menuBtn).focus({ preventScroll: true });
+  }
+  menuBtn.addEventListener('click', () => setMenu(true));
+  $('sideClose').addEventListener('click', () => setMenu(false));
+  scrim.addEventListener('click', () => setMenu(false));
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && sidebar.classList.contains('open')) setMenu(false); });
+  phone.addEventListener('change', () => { if (!phone.matches) setMenu(false); syncInert(); });
+  syncInert();
   $('headCta').addEventListener('click', () => go('setup'));
 
   /* ----- archive filter ----- */
@@ -150,7 +172,7 @@
     $('syncBtn').classList.toggle('sync-off', CloudSync.state.api === 'none');
     $('syncForget').hidden = !CloudSync.hasKey();
   }
-  const openSync = () => { $('syncKey').value = ''; syncStatus(); dialog.showModal(); };
+  const openSync = () => { setMenu(false); $('syncKey').value = ''; syncStatus(); dialog.showModal(); };
   $('syncBtn').addEventListener('click', openSync);
   $('syncBtnMobile').addEventListener('click', openSync);
   $('syncClose').addEventListener('click', () => dialog.close());

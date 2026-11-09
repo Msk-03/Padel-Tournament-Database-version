@@ -1,6 +1,6 @@
 // /api/health — lets the app see whether the database is reachable, whether
 // saving is switched on, and whether the organiser key it holds is correct.
-import { getSql, json, route, writeEnabled, isAuthorized } from './_lib/db.js';
+import { getSql, json, route, writeEnabled, masterEnabled, roleOf } from './_lib/db.js';
 
 export default {
   fetch: route(async request => {
@@ -14,6 +14,7 @@ export default {
       error = err.status ? err.message : 'Database is not reachable.';
       if (!err.status) console.error(err);
     }
-    return json({ ok: database, database, writeEnabled: writeEnabled(), authorized: isAuthorized(request), error });
+    const role = roleOf(request);
+    return json({ ok: database, database, writeEnabled: writeEnabled(), masterEnabled: masterEnabled(), authorized: role !== null, role, error });
   })
 };

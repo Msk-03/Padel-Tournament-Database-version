@@ -158,13 +158,7 @@ window.Players = (() => {
         const group = ui.group === 'main' ? 'Leaderboard' : 'All players';
         return `<section class="pl-detail" aria-label="${esc(r.name)} details">
             <div class="pl-hero">
-                <div class="pl-photo">
-                    ${avatar(r, 'pl-avatar-lg')}
-                    <div class="pl-photo-actions">
-                        <button class="pl-photo-btn" data-photo="set" title="${photoOf(r) ? 'Change photo' : 'Add photo'}"><svg><use href="#i-camera"/></svg><span>${photoOf(r) ? 'Change' : 'Add photo'}</span></button>
-                        ${photoOf(r) ? '<button class="pl-photo-btn pl-photo-del" data-photo="remove" title="Remove photo" aria-label="Remove photo"><svg><use href="#i-trash"/></svg></button>' : ''}
-                    </div>
-                </div>
+                <div class="pl-photo">${avatar(r, photoOf(r) ? 'pl-avatar-lg pl-portrait' : 'pl-avatar-lg')}</div>
                 <div class="pl-hero-text">
                     <p class="pl-eyebrow">${r.rank === 1 ? '👑 ' : ''}#${r.rank} · ${group}</p>
                     <h3 class="pl-hero-name">${esc(first)}<strong>${esc(last)}</strong></h3>
@@ -190,6 +184,10 @@ window.Players = (() => {
                 <div><b class="l">${r.losses}</b><small>Lost</small></div>
                 <div><b>${cell(r.points)}</b><small>Pts won</small></div>
                 <div><b>${signed(r.diff)}</b><small>Diff</small></div>
+            </div>
+            <div class="pl-photo-links">
+                <button data-photo="set"><svg><use href="#i-camera"/></svg>${photoOf(r) ? 'Change photo' : 'Add photo'}</button>
+                ${photoOf(r) ? '<button data-photo="remove">Remove photo</button>' : ''}
             </div>
         </section>`;
     }
@@ -264,6 +262,7 @@ window.Players = (() => {
     function photoAction(kind) {
         const sel = currentRows.find(r => r.key === ui.open);
         if (!sel) return;
+        if (photoOf(sel) && !CloudSync.mayChangePhoto(sel.kind, sel.key)) { alert(CloudSync.MASTER_ONLY); return; }
         if (kind === 'remove') {
             if (confirm(`Remove ${sel.name}'s photo?`)) { CloudSync.setPhoto(sel.kind, sel.key, null); render(); }
             return;

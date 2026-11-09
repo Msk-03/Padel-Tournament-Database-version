@@ -51,22 +51,41 @@ export function route(handler) {
   };
 }
 
-/* ---------- organiser key ---------- */
+/* ---------- keys ----------
+   ADMIN_KEY  (organiser key): create tournaments, play and save rounds, record past
+              tournaments, add a photo for a player who has none.
+   MASTER_KEY (master key):    everything above, plus deleting tournaments or matches and
+              changing or removing player photos. Keep this one to yourself.
+   If MASTER_KEY is not set, the organiser key can do everything (how earlier versions worked). */
 
 const digest = s => createHash('sha256').update(String(s)).digest();
+const same = (expected, given) => Boolean(expected && given) && timingSafeEqual(digest(expected), digest(given));
 
-export function writeEnabled() { return Boolean(process.env.ADMIN_KEY); }
+export function writeEnabled() { return Boolean(process.env.ADMIN_KEY || process.env.MASTER_KEY); }
+export function masterEnabled() { return Boolean(process.env.MASTER_KEY); }
 
-export function isAuthorized(request) {
-  const expected = process.env.ADMIN_KEY;
+// 'master' | 'organiser' | null for the key sent in the x-admin-key header.
+export function roleOf(request) {
   const given = request.headers.get('x-admin-key');
-  if (!expected || !given) return false;
-  return timingSafeEqual(digest(expected), digest(given));
+  if (!given) return null;
+  if (same(process.env.MASTER_KEY, given)) return 'master';
+  if (same(process.env.ADMIN_KEY, given)) return process.env.MASTER_KEY ? 'organiser' : 'master';
+  return null;
 }
 
+export function isAuthorized(request) { return roleOf(request) !== null; }
+
+// Returns the caller's role; throws unless the organiser or master key was sent.
 export function requireAuth(request) {
   if (!writeEnabled()) throw new HttpError(503, 'Saving is turned off: set ADMIN_KEY in your Vercel project.');
-  if (!isAuthorized(request)) throw new HttpError(401, 'Wrong or missing organiser key.');
+  const role = roleOf(request);
+  if (!role) throw new HttpError(401, 'Wrong or missing organiser key.');
+  return role;
+}
+
+export function requireMaster(request) {
+  if (requireAuth(request) !== 'master') throw new HttpError(403, 'Only the master key can delete or change this.');
+  return 'master';
 }
 
 /* ---------- record → table rows ---------- */

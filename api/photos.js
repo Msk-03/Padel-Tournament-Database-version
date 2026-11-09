@@ -1,7 +1,8 @@
 // /api/photos — optional player photos (small JPEGs, shown on the Player stats cards).
 //   GET                      → every photo: [{ kind, key, data, updated_at }] (public)
 //   GET ?since=ISO-time      → only photos changed after that time (public)
-//   PUT { kind, key, data, updatedAt }  → add / replace a photo; data: null removes it (organiser key)
+//   PUT { kind, key, data, updatedAt }  → add a photo (organiser key); replacing or removing an
+//                                         existing photo (data: null) needs the master key
 // A removed photo stays as a row with data = NULL so other devices learn about the removal.
 import { getSql, json, route, requireAuth, nameKey, HttpError } from './_lib/db.js';
 
@@ -15,7 +16,7 @@ async function list(sql, since) {
   return rows.map(r => ({ kind: r.kind, key: r.name_key, data: r.data, updated_at: new Date(r.updated_at).toISOString() }));
 }
 
-async function save(sql, request) {
+async function save(sql, request, role) {
   let body;
   try { body = await request.json(); } catch { throw new HttpError(400, 'Body must be JSON.'); }
   const kind = body && body.kind;
@@ -26,6 +27,11 @@ async function save(sql, request) {
   if (!key || key.length > 120) throw new HttpError(400, 'Invalid name.');
   if (data !== null && (typeof data !== 'string' || data.length > MAX_PHOTO || !DATA_RE.test(data))) {
     throw new HttpError(400, 'Photo must be a small JPEG, PNG or WebP image.');
+  }
+  if (role !== 'master') {
+    const [cur] = await sql`SELECT data IS NOT NULL AS has FROM player_photos WHERE kind = ${kind} AND name_key = ${key}`;
+    if (cur && cur.has) throw new HttpError(403, 'Only the master key can change or remove a photo.');
+    if (data === null) return { ok: true, stale: false };
   }
   const rows = await sql`
     INSERT INTO player_photos (kind, name_key, data, updated_at)
@@ -47,8 +53,7 @@ export default {
       }
       case 'PUT':
       case 'POST':
-        requireAuth(request);
-        return json(await save(await getSql(), request));
+        return json(await save(await getSql(), request, requireAuth(request)));
       default:
         return json({ error: 'Method not allowed' }, 405);
     }

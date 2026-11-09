@@ -1830,6 +1830,8 @@
 
     function resetTournament() {
         if (!tournamentId) return;
+        const rec = getSavedTournaments().find(t => t.id === tournamentId);
+        if (window.CloudSync && !CloudSync.mayDeleteTournament(rec)) { alert(CloudSync.MASTER_ONLY + '\n\nUse "Save & exit" to leave the tournament.'); return; }
         const everywhere = window.CloudSync && CloudSync.hasKey();
         if (!confirm(`Delete "${tournamentName}"? All its rounds and scores will be removed${everywhere ? ', also from the online database and player stats' : ''}. This cannot be undone.\n\nTo keep it, press Cancel and use "Save & exit" instead.`)) return;
         const id = tournamentId;
@@ -1901,7 +1903,7 @@
                     <div class="archive-actions">
                         ${t.recorded ? '' : `<button class="action-btn btn-resume-sm" onclick="resumeTournamentById('${t.id}', true)">${t.isFinished ? 'Continue playing' : 'Resume'}</button>`}
                         <button class="action-btn btn-view-sm" onclick="viewTournamentDetails('${t.id}')">View</button>
-                        <button class="action-btn btn-delete-sm" onclick="deleteTournamentRecord('${t.id}')">Delete</button>
+                        ${!window.CloudSync || CloudSync.mayDeleteTournament(t) ? `<button class="action-btn btn-delete-sm" onclick="deleteTournamentRecord('${t.id}')">Delete</button>` : ''}
                     </div>
                 </div>
             `;
@@ -1974,7 +1976,7 @@
         if (!confirm("Reopen this tournament and keep playing? Scores so far are kept, and the champion is decided again when you finish.")) return;
         isTournamentFinished = false;
         if (format === 'americano' || format === 'team-americano') playingExtraRounds = true;
-        const lastPlayed = matchHistoryLog.length ? Math.max(...matchHistoryLog.map(r => r.round || 0)) : 0;
+        const lastPlayed = matchHistoryLog.length ? Math.max(...matchHistoryLog.map(r => r.round || 0)) : Math.max(0, currentRound - 1);
         if (lastPlayed >= currentRound || !roundActiveMatches || roundActiveMatches.length === 0) {
             currentRound = lastPlayed + 1;
             roundActiveMatches = [];
@@ -1994,6 +1996,8 @@
     }
 
     function deleteTournamentRecord(id) {
+        const rec = getSavedTournaments().find(t => t.id === id);
+        if (window.CloudSync && !CloudSync.mayDeleteTournament(rec)) { alert(CloudSync.MASTER_ONLY); return; }
         const everywhere = window.CloudSync && CloudSync.hasKey();
         const msg = everywhere
             ? "Permanently delete this tournament? It will also be removed from the online database and its results from player stats."
@@ -2056,7 +2060,9 @@
 
         const histContainer = document.getElementById('view-archive-history');
         if (!t.matchHistory || t.matchHistory.length === 0) {
-            histContainer.innerHTML = '<p style="color:var(--text-muted); text-align:center;">No match logs recorded.</p>';
+            histContainer.innerHTML = t.historyPurgedAt
+                ? '<p class="helper-text" style="text-align:center;">The match-by-match history was removed after 60 days to keep the database small. Final scores and standings are kept.</p>'
+                : '<p style="color:var(--text-muted); text-align:center;">No match logs recorded.</p>';
             return;
         }
 

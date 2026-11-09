@@ -98,6 +98,18 @@ npx vercel dev        # serves the site and /api on http://localhost:3000
 
 `vercel dev` reads environment variables from Vercel after `npx vercel link` and `npx vercel env pull`.
 
+## Keys and automatic clean-up
+
+| Variable | Needed | What it does |
+|---|---|---|
+| `ADMIN_KEY` | yes | **Organiser key.** Create tournaments, play and save rounds, record past tournaments, add a photo for a player who has none. Give it to anyone who runs tournaments. |
+| `MASTER_KEY` | recommended | **Master key.** Everything above, plus deleting tournaments or matches, removing or renaming players in a saved tournament, and changing or removing photos. Keep it to yourself. Without it, the organiser key can do everything. |
+| `PURGE_AT_MB` | optional (300) | Database size in MB at which old match history starts being removed. |
+| `HISTORY_DAYS` | optional (60) | How old (days since it was played) a finished tournament must be before its match history can be removed. |
+| `CRON_SECRET` | optional | Protects `/api/maintenance` so only Vercel's daily job (or the master key) can run it. |
+
+A Vercel cron (see `vercel.json`) calls `/api/maintenance` once a day. While the database is under `PURGE_AT_MB` it does nothing. Above that, finished tournaments played more than `HISTORY_DAYS` days ago lose their match-by-match history; final scores, standings and player stats are kept forever. To check the size by hand, open `/api/maintenance?dry=1` with the master key in the `x-admin-key` header.
+
 ## Deploy to GitHub Pages (no database)
 
 GitHub Pages only hosts static files, so the app runs there exactly as before: everything stays on each device and the status shows **This device only**. The included workflow (`.github/workflows/pages.yml`) publishes on every push to `main` once **Settings → Pages → Source** is set to **GitHub Actions**. If you only use Vercel you can delete that workflow file.
