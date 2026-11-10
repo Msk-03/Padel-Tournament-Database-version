@@ -2057,7 +2057,7 @@
                         <div class="archive-meta">${fmtName} · ${t.maxPoints || 16} pts · ${t.date}</div>
                         <div class="archive-chips">${statusBadge}${t.winner && t.winner !== 'None' ? `<span class="badge-winner">${t.isFinished ? '🏆 ' : 'Leader: '}${t.winner}</span>` : ''}${t._synced ? '<span class="badge-cloud" title="Saved in the online database">☁ Saved online</span>' : ''}</div>
                     </div>
-                    <div class="archive-foot"><span>${count} ${unit} · ${t.totalCourts} ${t.totalCourts == 1 ? 'court' : 'courts'}</span><span>${t.recorded ? 'Final table only' : roundsPlayed + ' rounds played'}</span></div>
+                    <div class="archive-foot"><span>${count} ${unit} · ${t.totalCourts} ${t.totalCourts == 1 ? 'court' : 'courts'}</span><span>${t.recorded ? 'Final table only' : roundsPlayed + (roundsPlayed === 1 ? ' round played' : ' rounds played')}</span></div>
                     <div class="archive-actions">
                         ${t.recorded ? '' : `<button class="action-btn btn-resume-sm" onclick="resumeTournamentById('${t.id}', true)">${t.isFinished ? 'Continue playing' : 'Resume'}</button>`}
                         <button class="action-btn btn-view-sm" onclick="viewTournamentDetails('${t.id}')">View</button>

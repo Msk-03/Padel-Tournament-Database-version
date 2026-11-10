@@ -114,8 +114,9 @@ input[type=text],input[type=date],input[type=search],input[type=password],input[
 input:focus,select:focus{border-color:var(--primary);box-shadow:0 0 0 3px rgba(8,125,128,.15)}
 select{appearance:none;-webkit-appearance:none;padding-right:40px;background-image:linear-gradient(45deg,transparent 50%,var(--muted) 50%),linear-gradient(135deg,var(--muted) 50%,transparent 50%);background-position:calc(100% - 20px) 21px,calc(100% - 15px) 21px;background-size:5px 5px;background-repeat:no-repeat}
 input::placeholder{color:var(--muted);opacity:.7}
-.form-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:0 14px}
-.fg-lg{grid-column:span 2}
+.form-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,190px);gap:0 14px}
+.form-row>*{min-width:0}
+.fg-lg{grid-column:auto}
 .form-card .panel-title{font-size:26px;letter-spacing:-.4px}
 .format-card{display:flex;flex-direction:column;gap:6px;margin-top:12px;padding:14px 16px;border-radius:12px;background:var(--chip-green-bg)}
 .format-card strong{font-size:13px;font-weight:600;color:var(--ink)}
@@ -316,7 +317,6 @@ input::placeholder{color:var(--muted);opacity:.7}
 .pl-event-name{min-width:0}
 .pl-event-name small{display:block;font-size:11px;color:var(--muted)}
 .pl-event-stats{font-size:12px;color:var(--muted);white-space:nowrap}
-.btn-view-sm.action-btn{height:30px}
 
 /* ---------- record past ---------- */
 #record-screen .panel{min-width:0}
@@ -485,7 +485,7 @@ input::placeholder{color:var(--muted);opacity:.7}
 .pl-name{display:flex;flex-wrap:wrap;align-items:baseline;gap:0 6px;font-size:16px;font-weight:500;line-height:1.3}
 .pl-name strong{font-weight:700}
 .pl-crown{margin-right:2px}
-.pl-mini{display:grid;grid-template-columns:repeat(4,minmax(0,auto));justify-content:start;gap:4px 26px;margin-top:10px}
+.pl-mini{display:grid;grid-template-columns:repeat(5,minmax(0,auto));justify-content:start;gap:6px 24px;margin-top:10px}
 .pl-mini dt{font-size:9px;font-weight:600;letter-spacing:1.2px;text-transform:uppercase;color:var(--muted)}
 .pl-mini dd{margin-top:3px;font-size:13px;font-weight:600}
 .pl-num{position:absolute;top:10px;right:18px;font-size:44px;font-weight:300;line-height:1;color:transparent;-webkit-text-stroke:1.2px var(--muted);opacity:.55;font-variant-numeric:tabular-nums}
@@ -538,7 +538,7 @@ input::placeholder{color:var(--muted);opacity:.7}
 @media (max-width:759px){
   .pl-card{gap:14px;padding:14px 58px 14px 14px;border-radius:18px}
   .pl-avatar{width:52px;height:52px;border-radius:15px;font-size:17px}
-  .pl-mini{grid-template-columns:repeat(4,auto);gap:4px 16px}
+  .pl-mini{grid-template-columns:repeat(3,minmax(0,auto));gap:8px 18px}
   .pl-num{font-size:36px;right:14px}
   .pl-hero{flex-direction:column;align-items:flex-start;gap:14px;padding:22px 18px}
   .pl-avatar-lg{width:76px;height:76px;font-size:26px;border-radius:22px}
@@ -734,4 +734,52 @@ input::placeholder{color:var(--muted);opacity:.7}
   .view-badge{font-size:10px;white-space:nowrap}
   .view-top .brand-name{font-size:20px}
   .view-court{grid-template-columns:56px minmax(0,1fr)}
+}
+
+/* ---------- consistency pass ---------- */
+/* date fields: never wider than their box (iOS Safari gives them a large built-in width) */
+input[type=date]{display:block;min-width:0;max-width:100%;-webkit-appearance:none;appearance:none;line-height:46px;text-align:left}
+input[type=date]::-webkit-date-and-time-value{text-align:left;margin:0}
+input[type=date]::-webkit-calendar-picker-indicator{opacity:.6;cursor:pointer}
+.pl-date input[type=date]{line-height:36px}
+/* every button pair: same width, same height */
+.btn-row{display:grid;grid-template-columns:repeat(2,minmax(0,240px));justify-content:space-between;gap:12px}
+.btn-row .btn{width:100%;min-width:0;margin:0}
+.btn-row>.btn:only-child,.btn-row>.btn:not([hidden]):only-of-type{grid-column:1/-1;justify-self:end;width:240px}
+.pl-details-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.pl-details-actions .btn{width:100%}
+.sync-actions{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);grid-template-columns:none;gap:8px}
+.sync-actions .btn{width:100%;padding:0 10px}
+.archive-actions .action-btn{height:36px}
+.edit-actions{display:grid;grid-template-columns:repeat(2,minmax(0,140px));justify-content:end}
+.edit-actions .btn{width:100%;min-width:0}
+@media (max-width:759px){
+  .form-row{grid-template-columns:minmax(0,1fr)}
+  .btn-row{grid-template-columns:minmax(0,1fr);justify-content:stretch}
+  .btn-row>.btn:only-child{width:100%}
+  .edit-actions{grid-template-columns:repeat(2,minmax(0,1fr));justify-content:stretch}
+}
+@media (max-width:440px){
+  .sync-actions{grid-auto-flow:row;grid-auto-columns:auto;grid-template-columns:minmax(0,1fr)}
+  .sync-actions .btn-primary{order:-1;grid-column:auto}
+}
+.spotlight .head-actions{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:8px}
+.spotlight .head-actions .btn{width:100%;min-width:150px;padding:0 14px}
+#tournament-screen .spotlight .head-actions{display:inline-grid}
+@media (max-width:759px){ .spotlight .head-actions .btn{min-width:0} .spotlight .head-actions{width:100%} #tournament-screen .spotlight .head-actions{width:auto} }
+.action-btn{white-space:nowrap}
+@media (max-width:440px){
+  .archive-actions{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .archive-actions:has(> :nth-child(2):last-child){grid-template-columns:repeat(2,minmax(0,1fr))}
+  .archive-actions .btn-delete-sm{grid-column:1/-1;justify-self:center;height:30px}
+}
+@media (max-width:759px){
+  .pl-card{grid-template-columns:52px minmax(0,1fr);grid-template-areas:"av name" "av nick" "mini mini";column-gap:14px;row-gap:2px;align-items:center;padding:14px 52px 14px 14px}
+  .pl-card>.pl-avatar{grid-area:av}
+  .pl-card-body{display:contents}
+  .pl-card .pl-name{grid-area:name;align-self:end}
+  .pl-card .pl-nick{grid-area:nick;align-self:start}
+  .pl-card .pl-mini{grid-area:mini;grid-template-columns:repeat(5,minmax(0,1fr));gap:6px;margin-top:12px;margin-right:-38px}
+  .pl-card .pl-mini dt{font-size:8px;letter-spacing:.8px;white-space:nowrap}
+  .pl-card .pl-mini dd{font-size:13px}
 }

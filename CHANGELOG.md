@@ -2,6 +2,9 @@
 
 ## 1.4.0 – 2026-11-09
 
+- Player cards show average points; "Name" removed from the sort options.
+- Layout pass checked at 10 screen widths (320–1440 px): date field stays inside its box (also on iPhone), every button pair has equal width and height, archive and player cards reflow on small phones.
+
 - Edit scores: correct any round from the Match history tab while playing. The tournament is replayed from that round with the same pairings, so points, rests, multipliers and boxes follow. Scores lock when a tournament is finished, or when it is resumed more than 15 minutes after "Save & exit" (the server enforces the lock for the organiser key).
 - Excel backup (master key): Overview, Player stats, Team stats, Tournaments, Final standings and Matches sheets, styled and print-ready.
 - Merge players (master key): combine two names for the same person across every tournament; photo and details follow.

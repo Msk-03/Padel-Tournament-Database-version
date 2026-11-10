@@ -79,7 +79,7 @@ window.Players = (() => {
 
     // Sort options (the pills above the cards). 'rank' = official order.
     const SORTS = [['rank', 'Rank'], ['winPct', 'Win %'], ['titles', 'Titles'], ['diff', 'Diff'],
-                   ['played', 'Played'], ['avg', 'Avg pts'], ['name', 'Name']];
+                   ['played', 'Played'], ['avg', 'Avg pts']];
     // Official order, 1st to last: best win %, then most titles, then best points difference.
     function officialOrder(a, b) {
         return (b.winPct - a.winPct) ||
@@ -139,6 +139,7 @@ window.Players = (() => {
                     <div><dt>Titles</dt><dd class="pl-titles">${r.titles}</dd></div>
                     <div><dt>Diff</dt><dd>${signed(r.diff)}</dd></div>
                     <div><dt>Played</dt><dd>${r.played}</dd></div>
+                    <div><dt>Avg pts</dt><dd class="pl-avg">${r.avg.toFixed(1)}</dd></div>
                 </dl>
             </div>
             <span class="pl-num" aria-label="Position ${i + 1}">${i + 1}</span>
