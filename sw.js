@@ -1,6 +1,6 @@
 // Service worker: installable + works offline (network first, cached fallback)
-const CACHE = 'padel-center-v33';
-const ASSETS = ['./', './index.html', './style.css', './cloud.js', './app.js', './players.js', './record.js', './xlsx.js', './backup.js', './view.html', './view.js', './ui.js', './manifest.json', './padel_app_icon.png', './padel_app_icon_512.png'];
+const CACHE = 'padel-center-v35';
+const ASSETS = ['./', './index.html', './style.css', './cloud.js', './app.js', './players.js', './record.js', './xlsx.js', './bgremove.js', './backup.js', './view.html', './view.js', './ui.js', './manifest.json', './padel_app_icon.png', './padel_app_icon_512.png'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => Promise.all(ASSETS.map(a => c.add(a).catch(() => {})))).then(() => self.skipWaiting()));

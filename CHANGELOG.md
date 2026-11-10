@@ -2,6 +2,10 @@
 
 ## 1.4.0 – 2026-11-09
 
+- "Remove background" in the photo editor: on-device AI person segmentation (Google MediaPipe, Apache-2.0, ~10 MB downloaded from jsDelivr/Google the first time it is used, then cached). Offline, a plain-background mode removes even backgrounds such as a wall. Photos never leave the device for this. Undo restores the original.
+
+- Photo editor when adding or replacing a player photo: drag to position, zoom (slider, pinch or mouse wheel), rotate, brightness and reset, with a live preview of the card frame. Cut-outs keep their transparency.
+
 - Americano and Team Americano: "Equal games" option (on by default) adds just enough rounds for everyone to play, and rest, the same number of times; the setup screen shows the plan (e.g. 10 players on 2 courts: 10 rounds, each plays 8 and rests 2). Team Americano with more teams than courts now spreads rests evenly in both modes. With the option off, resting players get average points in the tournament table (not in actual points).
 
 - Player stats and the all-time leaderboard add up actual match points (no rest points, no multipliers) for points won, points lost and difference. Each tournament's own table still ranks by total points.

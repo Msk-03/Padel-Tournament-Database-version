@@ -63,6 +63,7 @@
     <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4.5 7h15M9.5 7V4.8h5V7M6.5 7l.8 12.2a1.5 1.5 0 001.5 1.3h6.4a1.5 1.5 0 001.5-1.3L17.5 7M10 11v6M14 11v6"/></symbol>
     <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M19.5 12a7.5 7.5 0 11-2.2-5.3M19.5 4.5v4h-4"/></symbol>
     <symbol id="i-share" viewBox="0 0 24 24"><circle cx="17.5" cy="5.5" r="2.5"/><circle cx="6.5" cy="12" r="2.5"/><circle cx="17.5" cy="18.5" r="2.5"/><path d="M8.7 10.8l6.6-4M8.7 13.2l6.6 4"/></symbol>
+    <symbol id="i-magic" viewBox="0 0 24 24"><path d="M4.5 19.5l10-10M13 6l1-2.5L15 6l2.5 1L15 8l-1 2.5L13 8l-2.5-1zM18.5 12.5l.6-1.5.6 1.5 1.5.6-1.5.6-.6 1.5-.6-1.5-1.5-.6z"/></symbol>
     <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h10"/></symbol>
     <symbol id="i-chart" viewBox="0 0 24 24"><path d="M5 19V11M10 19V5M15 19v-6M20 19v-9"/></symbol>
   </defs>
@@ -375,6 +376,27 @@
   <div class="scrim" id="scrim" hidden></div>
 </div>
 
+<dialog class="sync-dialog photo-dialog" id="photoDialog" aria-labelledby="photoTitle">
+  <form method="dialog" onsubmit="return false">
+    <p class="eyebrow">PLAYER PHOTO</p>
+    <h2 id="photoTitle">Adjust photo</h2>
+    <p class="helper-text" id="photo-kind">Drag to move. Use the slider or pinch to zoom.</p>
+    <div class="photo-frame" id="photo-frame"><canvas id="photo-canvas" tabindex="0" aria-label="Photo preview: drag or use the arrow keys to move"></canvas></div>
+    <label class="photo-range"><span>Zoom</span><input type="range" id="photo-zoom" min="100" max="400" value="100"></label>
+    <label class="photo-range"><span>Brightness</span><input type="range" id="photo-bright" min="60" max="140" value="100"></label>
+    <button type="button" class="btn btn-lime btn-sm photo-bg-btn" id="photo-removebg"><svg><use href="#i-magic"/></svg>Remove background</button>
+    <button type="button" class="btn btn-secondary btn-sm photo-bg-btn" id="photo-undo-bg" hidden><svg><use href="#i-back"/></svg>Undo background removal</button>
+    <div class="btn-pair photo-tools">
+      <button type="button" class="btn btn-secondary btn-sm" id="photo-rotate"><svg><use href="#i-refresh"/></svg>Rotate</button>
+      <button type="button" class="btn btn-secondary btn-sm" id="photo-reset">Reset</button>
+    </div>
+    <div class="btn-pair photo-actions">
+      <button type="button" class="btn btn-secondary" id="photo-cancel">Cancel</button>
+      <button type="button" class="btn btn-primary" id="photo-save">Save photo</button>
+    </div>
+  </form>
+</dialog>
+
 <dialog class="sync-dialog" id="mergeDialog" aria-labelledby="mergeTitle">
   <form method="dialog" onsubmit="return false">
     <p class="eyebrow">MASTER KEY</p>
@@ -410,6 +432,7 @@
 </dialog>
 <script src="cloud.js"></script>
 <script src="app.js"></script>
+<script src="bgremove.js"></script>
 <script src="players.js"></script>
 <script src="record.js"></script>
 <script src="xlsx.js"></script>

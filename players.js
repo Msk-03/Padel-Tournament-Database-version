@@ -328,6 +328,195 @@ window.Players = (() => {
             URL.revokeObjectURL(url);
         }
     }
+    /* ---------- photo editor: position, zoom, rotate, brightness before saving ---------- */
+    const OUT_W = 360, OUT_H = 450;           // saved size (4:5)
+    const ed = { img: null, cutout: false, rot: 0, zoom: 1, x: 0, y: 0, bright: 100, base: 1 };
+
+    // Does the picture have a transparent background (a cut-out)?
+    function hasTransparency(img, type) {
+        if (!/png|webp|gif/i.test(type || '')) return false;
+        const sc = Math.min(1, 300 / Math.max(img.naturalWidth, img.naturalHeight));
+        const t = document.createElement('canvas');
+        t.width = Math.max(1, Math.round(img.naturalWidth * sc)); t.height = Math.max(1, Math.round(img.naturalHeight * sc));
+        const tx = t.getContext('2d', { willReadFrequently: true });
+        tx.drawImage(img, 0, 0, t.width, t.height);
+        const px = tx.getImageData(0, 0, t.width, t.height).data;
+        let clear = 0;
+        for (let i = 3; i < px.length; i += 4) if (px[i] < 20) clear++;
+        return clear > (px.length / 4) * 0.05;
+    }
+    const rotated = () => ed.rot % 180 !== 0;
+    const srcW = () => (rotated() ? ed.img.naturalHeight : ed.img.naturalWidth);
+    const srcH = () => (rotated() ? ed.img.naturalWidth : ed.img.naturalHeight);
+    // Zoom 1 = the picture just fills the frame (photo) or just fits inside it (cut-out).
+    function baseScale() {
+        return ed.cutout ? Math.min(OUT_W / srcW(), OUT_H / srcH()) : Math.max(OUT_W / srcW(), OUT_H / srcH());
+    }
+    // Keep a photo covering the whole frame (no empty edges); cut-outs may move freely.
+    function clampOffsets() {
+        const sc = ed.base * ed.zoom, w = srcW() * sc, h = srcH() * sc;
+        if (!ed.cutout) {
+            const mx = Math.max(0, (w - OUT_W) / 2), my = Math.max(0, (h - OUT_H) / 2);
+            ed.x = Math.max(-mx, Math.min(mx, ed.x)); ed.y = Math.max(-my, Math.min(my, ed.y));
+        } else {
+            ed.x = Math.max(-OUT_W / 2, Math.min(OUT_W / 2, ed.x)); ed.y = Math.max(-OUT_H / 2, Math.min(OUT_H / 2, ed.y));
+        }
+    }
+    function drawEdit(ctx, w, h) {
+        const k = w / OUT_W, sc = ed.base * ed.zoom * k;
+        ctx.clearRect(0, 0, w, h);
+        ctx.save();
+        ctx.filter = ed.bright !== 100 ? `brightness(${ed.bright}%)` : 'none';
+        ctx.translate(w / 2 + ed.x * k, h / 2 + ed.y * k);
+        ctx.rotate(ed.rot * Math.PI / 180);
+        ctx.drawImage(ed.img, -ed.img.naturalWidth * sc / 2, -ed.img.naturalHeight * sc / 2, ed.img.naturalWidth * sc, ed.img.naturalHeight * sc);
+        ctx.restore();
+    }
+    function paintPreview() {
+        const cv = $('photo-canvas'), dpr = window.devicePixelRatio || 1;
+        const w = cv.clientWidth || 240, h = Math.round(w * OUT_H / OUT_W);
+        if (cv.width !== Math.round(w * dpr)) { cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); }
+        drawEdit(cv.getContext('2d'), cv.width, cv.height);
+    }
+    function resetEdit(keepRot) {
+        if (!keepRot) ed.rot = 0;
+        ed.zoom = 1; ed.x = 0; ed.y = ed.cutout ? 0 : 0; ed.bright = 100;
+        ed.base = baseScale();
+        // ordinary photos start a little towards the top, where faces usually are
+        if (!ed.cutout) { const sc = ed.base, h = srcH() * sc; ed.y = Math.max(0, (h - OUT_H) / 2) * 0.4; clampOffsets(); }
+        $('photo-zoom').value = 100; $('photo-bright').value = 100;
+        paintPreview();
+    }
+    // Final image: 360×450 JPEG for photos; for cut-outs, a transparent WebP/PNG trimmed to the person.
+    function exportEdit() {
+        const c = document.createElement('canvas');
+        c.width = OUT_W; c.height = OUT_H;
+        const cx = c.getContext('2d', { willReadFrequently: true });
+        if (!ed.cutout) {
+            cx.fillStyle = '#fff'; cx.fillRect(0, 0, OUT_W, OUT_H);
+            drawEdit(cx, OUT_W, OUT_H);
+            // drawEdit clears the canvas, so paint the white backing underneath afterwards
+            cx.globalCompositeOperation = 'destination-over'; cx.fillStyle = '#fff'; cx.fillRect(0, 0, OUT_W, OUT_H);
+            return c.toDataURL('image/jpeg', 0.85);
+        }
+        drawEdit(cx, OUT_W, OUT_H);
+        const px = cx.getImageData(0, 0, OUT_W, OUT_H).data;
+        let minX = OUT_W, minY = OUT_H, maxX = -1, maxY = -1;
+        for (let y = 0; y < OUT_H; y++) for (let x = 0; x < OUT_W; x++) {
+            if (px[(y * OUT_W + x) * 4 + 3] < 20) continue;
+            if (x < minX) minX = x; if (x > maxX) maxX = x; if (y < minY) minY = y; if (y > maxY) maxY = y;
+        }
+        if (maxX < 0) return null;
+        // keep the bottom of the frame (feet / chest on the card edge) and trim the sides and top
+        const t = document.createElement('canvas');
+        t.width = maxX - minX + 1; t.height = OUT_H - minY;
+        t.getContext('2d').drawImage(c, minX, minY, t.width, t.height, 0, 0, t.width, t.height);
+        let out = t.toDataURL('image/webp', 0.88);
+        if (!/^data:image\/webp/.test(out)) out = t.toDataURL('image/png');
+        return out;
+    }
+    async function openPhotoEditor(file) {
+        const url = URL.createObjectURL(file);
+        const img = new Image();
+        img.src = url;
+        try { await img.decode(); } catch (e) { URL.revokeObjectURL(url); throw e; }
+        ed.img = img; ed.url = url; ed.original = null;
+        ed.cutout = hasTransparency(img, file.type);
+        $('photo-removebg').hidden = ed.cutout; $('photo-undo-bg').hidden = true;
+        if (!ed.cutout && window.BgRemove) BgRemove.warmUp();
+        $('photo-frame').classList.toggle('is-cutout-frame', ed.cutout);
+        $('photo-kind').textContent = ed.cutout
+            ? 'Cut-out picture (no background): it will stand on the bottom edge of the card.'
+            : 'Drag to move. Use the slider or pinch to zoom.';
+        $('photoDialog').showModal();
+        requestAnimationFrame(() => resetEdit());
+    }
+    async function removeBackground() {
+        if (!ed.img || !window.BgRemove) return;
+        const btns = ['photo-removebg', 'photo-save', 'photo-rotate', 'photo-reset'].map(id => $(id));
+        btns.forEach(b => { b.disabled = true; });
+        $('photo-frame').classList.add('is-busy');
+        $('photo-kind').textContent = 'Removing the background… The first time can take a few seconds.';
+        try {
+            const { canvas, method } = await BgRemove.remove(ed.img);
+            const img = new Image();
+            img.src = canvas.toDataURL('image/png');
+            await img.decode();
+            ed.original = { img: ed.img, cutout: ed.cutout };
+            ed.img = img; ed.cutout = true;
+            $('photo-frame').classList.add('is-cutout-frame');
+            $('photo-removebg').hidden = true; $('photo-undo-bg').hidden = false;
+            $('photo-kind').textContent = method === 'ai'
+                ? 'Background removed. Check the edges, then save – or undo.'
+                : 'Background removed (plain-background mode, the AI could not be loaded). Check the edges, then save – or undo.';
+            resetEdit(true);
+        } catch (e) {
+            $('photo-kind').textContent = 'Couldn\u2019t remove the background' + (e && e.message ? ': ' + e.message : '.') + ' You can still save the photo as it is.';
+        } finally {
+            btns.forEach(b => { b.disabled = false; });
+            $('photo-frame').classList.remove('is-busy');
+        }
+    }
+
+    function closePhotoEditor() {
+        $('photoDialog').close();
+        if (ed.url) URL.revokeObjectURL(ed.url);
+        ed.img = null; ed.url = null;
+    }
+    function initPhotoEditor() {
+        const cv = $('photo-canvas');
+        const pointers = new Map();
+        let last = null, pinch = null;
+        cv.addEventListener('pointerdown', e => { cv.setPointerCapture(e.pointerId); pointers.set(e.pointerId, [e.clientX, e.clientY]); last = [e.clientX, e.clientY]; });
+        cv.addEventListener('pointermove', e => {
+            if (!pointers.has(e.pointerId) || !ed.img) return;
+            pointers.set(e.pointerId, [e.clientX, e.clientY]);
+            const k = OUT_W / cv.clientWidth;
+            if (pointers.size === 2) {
+                const [a, b] = [...pointers.values()];
+                const d = Math.hypot(a[0] - b[0], a[1] - b[1]);
+                if (pinch) { ed.zoom = Math.max(1, Math.min(4, ed.zoom * d / pinch)); $('photo-zoom').value = Math.round(ed.zoom * 100); }
+                pinch = d;
+            } else if (last) {
+                ed.x += (e.clientX - last[0]) * k; ed.y += (e.clientY - last[1]) * k;
+            }
+            last = [e.clientX, e.clientY];
+            clampOffsets(); paintPreview();
+        });
+        const up = e => { pointers.delete(e.pointerId); pinch = null; last = pointers.size ? [...pointers.values()][0] : null; };
+        cv.addEventListener('pointerup', up); cv.addEventListener('pointercancel', up);
+        cv.addEventListener('wheel', e => { e.preventDefault(); ed.zoom = Math.max(1, Math.min(4, ed.zoom * (e.deltaY < 0 ? 1.08 : 0.92))); $('photo-zoom').value = Math.round(ed.zoom * 100); clampOffsets(); paintPreview(); }, { passive: false });
+        $('photo-zoom').addEventListener('input', e => { ed.zoom = e.target.value / 100; clampOffsets(); paintPreview(); });
+        $('photo-bright').addEventListener('input', e => { ed.bright = +e.target.value; paintPreview(); });
+        $('photo-rotate').addEventListener('click', () => { ed.rot = (ed.rot + 90) % 360; resetEdit(true); });
+        $('photo-reset').addEventListener('click', () => resetEdit());
+        $('photo-removebg').addEventListener('click', removeBackground);
+        $('photo-undo-bg').addEventListener('click', () => {
+            if (!ed.original) return;
+            ed.img = ed.original.img; ed.cutout = ed.original.cutout; ed.original = null;
+            $('photo-frame').classList.toggle('is-cutout-frame', ed.cutout);
+            $('photo-undo-bg').hidden = true; $('photo-removebg').hidden = false;
+            $('photo-kind').textContent = 'Background restored.';
+            resetEdit(true);
+        });
+        $('photo-cancel').addEventListener('click', () => { photoTarget = null; closePhotoEditor(); });
+        $('photoDialog').addEventListener('cancel', () => { photoTarget = null; if (ed.url) URL.revokeObjectURL(ed.url); ed.img = null; });
+        // arrow keys nudge the picture (keyboard users)
+        cv.addEventListener('keydown', e => {
+            const step = e.shiftKey ? 20 : 5, d = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] }[e.key];
+            if (!d) return; e.preventDefault(); ed.x += d[0]; ed.y += d[1]; clampOffsets(); paintPreview();
+        });
+        $('photo-save').addEventListener('click', () => {
+            if (!ed.img || !photoTarget) return closePhotoEditor();
+            const data = exportEdit();
+            if (!data) { alert('The picture is empty. Move it back into the frame.'); return; }
+            CloudSync.setPhoto(photoTarget.kind, photoTarget.key, data);
+            photoTarget = null;
+            closePhotoEditor();
+            render();
+        });
+    }
+
     let photoTarget = null;
     function photoAction(kind) {
         const sel = currentRows.find(r => r.key === ui.open);
@@ -556,14 +745,13 @@ window.Players = (() => {
             const file = e.target.files && e.target.files[0];
             if (!file || !photoTarget) return;
             try {
-                const data = await shrinkPhoto(file);
-                CloudSync.setPhoto(photoTarget.kind, photoTarget.key, data);
+                await openPhotoEditor(file);
             } catch (err) {
                 alert('That picture could not be opened. Try a JPEG or PNG photo.');
+                photoTarget = null;
             }
-            photoTarget = null;
-            render();
         });
+        initPhotoEditor();
         wide.addEventListener('change', render);
         window.addEventListener('padel:data-changed', render);
     }

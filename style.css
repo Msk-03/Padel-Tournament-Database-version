@@ -830,3 +830,29 @@ input[type=date]::-webkit-calendar-picker-indicator{opacity:.6;cursor:pointer}
 .equal-check{display:flex;align-items:flex-start;gap:10px;margin:0;font-size:13px;color:var(--ink);cursor:pointer}
 .equal-check input{flex-shrink:0;width:18px;height:18px;margin-top:1px;accent-color:var(--primary)}
 .equal-info{margin:6px 0 0 28px;font-size:12px;color:var(--muted)}
+
+/* photo editor */
+.photo-dialog form{padding:24px 22px 22px}
+.photo-frame{position:relative;width:min(260px,100%);margin:6px auto 14px;border-radius:18px;overflow:hidden;background:var(--soft-2);box-shadow:inset 0 0 0 1px var(--line)}
+.photo-frame.is-cutout-frame{background:linear-gradient(120deg,var(--spot-from),var(--spot-to))}
+.photo-frame canvas{display:block;width:100%;aspect-ratio:4/5;cursor:grab;touch-action:none}
+.photo-frame canvas:active{cursor:grabbing}
+.photo-frame canvas:focus-visible{outline:2px solid var(--primary);outline-offset:-2px}
+.photo-range{display:grid;grid-template-columns:84px minmax(0,1fr);align-items:center;gap:10px;margin:8px 0}
+.photo-range span{font-size:12px;font-weight:600;color:var(--muted)}
+.photo-range input{width:100%;accent-color:var(--primary)}
+.photo-tools{margin-top:10px}
+.photo-actions{margin-top:12px}
+.photo-dialog .btn-pair{grid-template-columns:repeat(2,minmax(0,1fr))!important}
+.photo-frame{box-shadow:0 0 0 2px var(--primary),0 10px 24px -16px rgba(8,40,44,.5)}
+.photo-frame::after{content:"";position:absolute;inset:0;pointer-events:none;background:linear-gradient(transparent 33.2%,rgba(255,255,255,.35) 33.3%,transparent 33.5%,transparent 66.5%,rgba(255,255,255,.35) 66.6%,transparent 66.8%),linear-gradient(90deg,transparent 33.2%,rgba(255,255,255,.35) 33.3%,transparent 33.5%,transparent 66.5%,rgba(255,255,255,.35) 66.6%,transparent 66.8%);opacity:0;transition:opacity .2s}
+.photo-frame:active::after,.photo-frame:focus-within::after{opacity:1}
+.sync-dialog{max-height:calc(100dvh - 24px);overflow-y:auto}
+.photo-frame{width:min(260px,100%,calc((100dvh - 330px) * .8))}
+.photo-dialog .btn{white-space:nowrap;padding:0 12px}
+@media (max-height:700px){ .photo-dialog h2{font-size:22px;margin-bottom:6px} .photo-dialog .helper-text{margin:0 0 4px} .photo-dialog form{padding:18px 18px 16px} }
+
+.photo-bg-btn{width:100%;margin-top:6px}
+.photo-frame.is-busy canvas{opacity:.45;filter:blur(1px)}
+.photo-frame.is-busy::before{content:"";position:absolute;z-index:2;top:50%;left:50%;width:34px;height:34px;margin:-17px 0 0 -17px;border:3px solid rgba(255,255,255,.6);border-top-color:var(--primary);border-radius:50%;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
