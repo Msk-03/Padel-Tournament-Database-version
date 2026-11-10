@@ -354,18 +354,7 @@
 
     function getWinnerObject() {
         if (!participants || participants.length === 0) return null;
-        let displayList = [...participants].sort((a, b) => {
-            if (format === 'beat-the-box') {
-                if (a.currentBox !== b.currentBox) return a.currentBox - b.currentBox;
-            }
-            if (b.points !== a.points) return b.points - a.points;
-            const diffA = exactPts(a.points - (a.pointsLost || 0));
-            const diffB = exactPts(b.points - (b.pointsLost || 0));
-            if (diffB !== diffA) return diffB - diffA;
-            if (b.wins !== a.wins) return b.wins - a.wins;
-            return a.losses - b.losses;
-        });
-        return displayList[0];
+        return rankStandings(participants, format)[0];
     }
 
     function autoSaveCurrentTournament() {
@@ -845,8 +834,8 @@
                 th.textContent = 'Actual pts';
                 th.title = 'Points from matches actually played (no rest points). Used to pair challenge rounds; frozen during a challenge and updated after its last round.';
             } else {
-                th.textContent = 'Pts (1.0x)';
-                th.title = 'Points scored in matches at 1.0x (no multipliers, no rest points). Only used to work out rest averages; not used for ranking.';
+                th.textContent = 'Actual pts';
+                th.title = 'Points scored in matches at 1.0x (no multipliers, no rest points).';
             }
         });
     }
@@ -1628,13 +1617,13 @@
         const podium = document.getElementById('leaderboard-champion-podium');
         if (winner && podium) {
             podium.classList.remove('hidden');
-            const diff = shownDiff(winner.points, winner.pointsLost || 0);
+            const diff = shownDiff(actualPts(winner), actualLost(winner));
             const diffSign = diff > 0 ? '+' : '';
             podium.innerHTML = `
                 <div class="champion-banner">
                     <h3>🏆 TOURNAMENT CHAMPION 🏆</h3>
                     <div class="champ-name">${winner.name}</div>
-                    <div class="champ-stats">${fmtPts(winner.points)} Pts Won &nbsp;|&nbsp; Diff: ${diffSign}${diff} &nbsp;|&nbsp; Matches: ${winner.wins}W - ${winner.ties}T - ${winner.losses}L</div>
+                    <div class="champ-stats">${avgActual(winner).toFixed(1)} avg pts per match &nbsp;|&nbsp; Win ${Math.round(winRate(winner) * 100)}% &nbsp;|&nbsp; Diff: ${diffSign}${diff} &nbsp;|&nbsp; ${winner.wins}W - ${winner.ties}T - ${winner.losses}L</div>
                     <button class="btn btn-sm btn-glass" onclick="reopenTournament()"><svg><use href="#i-refresh"/></svg>Reopen &amp; keep playing</button>
                 </div>
             `;
@@ -1958,21 +1947,11 @@
 
     function renderLeaderboard() {
         setThirdColumnHeader(format);
-        let displayList = [...participants].sort((a, b) => {
-            if (format === 'beat-the-box') {
-                if (a.currentBox !== b.currentBox) return a.currentBox - b.currentBox;
-            }
-            if (b.points !== a.points) return b.points - a.points;
-            const diffA = exactPts(a.points - a.pointsLost);
-            const diffB = exactPts(b.points - b.pointsLost);
-            if (diffB !== diffA) return diffB - diffA;
-            if (b.wins !== a.wins) return b.wins - a.wins;
-            return a.losses - b.losses;
-        });
+        let displayList = rankStandings(participants, format);
 
         const tbody = document.getElementById('leaderboard-body');
         tbody.innerHTML = displayList.map((p, idx) => {
-            const diff = shownDiff(p.points, p.pointsLost);
+            const diff = shownDiff(actualPts(p), actualLost(p));
             const diffSign = diff > 0 ? '+' : '';
             const boxBadge = format === 'beat-the-box' ? `<span class="badge" style="background:var(--c-box); margin-left:6px;">Box ${p.currentBox || '-'}</span>` : '';
             
@@ -1984,15 +1963,17 @@
                 <tr style="${rowStyle}">
                     <td><strong>${rankBadge}</strong></td>
                     <td><strong>${p.name}</strong>${boxBadge}</td>
-                    <td style="font-weight:bold; color:var(--accent);">${ptsCell(p.points)}</td>
+                    <td class="avg-col">${avgActual(p).toFixed(1)}</td>
+                    <td>${Math.round(winRate(p) * 100)}%</td>
                     ${thirdColumnCell(p, format, matchHistoryLog, hybridState)}
-                    <td style="font-weight:bold; color:var(--c-loss);">${ptsCell(p.pointsLost)}</td>
+                    <td style="color:var(--c-loss);">${ptsCell(actualLost(p))}</td>
                     <td style="font-weight:600; color:${diff >= 0 ? 'var(--c-pos)' : 'var(--c-loss)'};">${diffSign}${diff}</td>
                     <td>${p.roundsPlayed}</td>
                     <td style="color:var(--c-win); font-weight:600;">${p.wins}</td>
                     <td style="color:var(--c-tie); font-weight:600;">${p.ties}</td>
                     <td style="color:var(--c-loss); font-weight:600;">${p.losses}</td>
                     <td style="color:var(--text-muted); font-weight:600;">${p.byeCount}</td>
+                    <td class="mm-col">${ptsCell(p.points)}</td>
                 </tr>
             `;
         }).join('');
@@ -2176,7 +2157,7 @@
                     <div class="archive-info">
                         <h4>${t.name}</h4>
                         <div class="archive-meta">${fmtName} · ${t.maxPoints || 16} pts · ${t.date}</div>
-                        <div class="archive-chips">${statusBadge}${t.winner && t.winner !== 'None' ? `<span class="badge-winner">${t.isFinished ? '🏆 ' : 'Leader: '}${t.winner}</span>` : ''}${t._synced ? '<span class="badge-cloud" title="Saved in the online database">☁ Saved online</span>' : ''}</div>
+                        <div class="archive-chips">${statusBadge}${(() => { const top = (t.participants || []).length && matchesPlayed(rankStandings(t.participants, t.format)[0]) ? rankStandings(t.participants, t.format)[0].name : ''; return top ? `<span class="badge-winner">${t.isFinished ? '🏆 ' : 'Leader: '}${top}</span>` : ''; })()}${t._synced ? '<span class="badge-cloud" title="Saved in the online database">☁ Saved online</span>' : ''}</div>
                     </div>
                     <div class="archive-foot"><span>${count} ${unit} · ${t.totalCourts} ${t.totalCourts == 1 ? 'court' : 'courts'}</span><span>${t.recorded ? 'Final table only' : roundsPlayed + (roundsPlayed === 1 ? ' round played' : ' rounds played')}</span></div>
                     <div class="archive-actions">
@@ -2313,20 +2294,10 @@
         const roundsPlayed = t.totalRoundsPlayed !== undefined ? t.totalRoundsPlayed : (t.totalRounds || 0);
         document.getElementById('view-archive-meta').innerText = `${t.date} · ${t.format.toUpperCase().replace(/-/g, ' ')} · ${roundsPlayed} rounds`;
 
-        let displayList = [...(t.participants || t.players || [])].sort((a, b) => {
-            if (t.format === 'beat-the-box' && a.currentBox && b.currentBox && a.currentBox !== b.currentBox) {
-                return a.currentBox - b.currentBox;
-            }
-            if (b.points !== a.points) return b.points - a.points;
-            const diffA = exactPts(a.points - (a.pointsLost || 0));
-            const diffB = exactPts(b.points - (b.pointsLost || 0));
-            if (diffB !== diffA) return diffB - diffA;
-            if (b.wins !== a.wins) return b.wins - a.wins;
-            return a.losses - b.losses;
-        });
+        let displayList = rankStandings(t.participants || t.players || [], t.format);
 
         document.getElementById('view-archive-leaderboard').innerHTML = displayList.map((p, idx) => {
-            const diff = shownDiff(p.points, p.pointsLost || 0);
+            const diff = shownDiff(actualPts(p), actualLost(p));
             const diffSign = diff > 0 ? '+' : '';
             const boxBadge = t.format === 'beat-the-box' ? `<span class="badge" style="background:var(--c-box); margin-left:6px;">Box ${p.currentBox || '-'}</span>` : '';
             const isWinner = t.isFinished && idx === 0;
@@ -2334,15 +2305,17 @@
                 <tr style="${isWinner ? 'background: var(--gold-row);' : ''}">
                     <td><strong>${isWinner ? '👑 #1' : `#${idx + 1}`}</strong></td>
                     <td><strong>${p.name}</strong>${boxBadge}</td>
-                    <td style="font-weight:bold; color:var(--accent);">${ptsCell(p.points)}</td>
+                    <td class="avg-col">${avgActual(p).toFixed(1)}</td>
+                    <td>${Math.round(winRate(p) * 100)}%</td>
                     ${thirdColumnCell(p, t.format, t.matchHistory, t.hybridState)}
-                    <td style="font-weight:bold; color:var(--c-loss);">${ptsCell(p.pointsLost)}</td>
+                    <td style="color:var(--c-loss);">${ptsCell(actualLost(p))}</td>
                     <td style="font-weight:600; color:${diff >= 0 ? 'var(--c-pos)' : 'var(--c-loss)'};">${diffSign}${diff}</td>
                     <td>${p.roundsPlayed}</td>
                     <td style="color:var(--c-win); font-weight:600;">${p.wins || 0}</td>
                     <td style="color:var(--c-tie); font-weight:600;">${p.ties || 0}</td>
                     <td style="color:var(--c-loss); font-weight:600;">${p.losses || 0}</td>
                     <td style="color:var(--text-muted); font-weight:600;">${p.byeCount || 0}</td>
+                    <td class="mm-col">${ptsCell(p.points)}</td>
                 </tr>
             `;
         }).join('');

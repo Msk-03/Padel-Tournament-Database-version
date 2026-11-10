@@ -68,12 +68,12 @@ window.Recorder = (() => {
         preview();
     }
 
-    // Same ordering as the in-app leaderboard: points, difference, wins, fewest losses.
+    // Same ordering as every tournament table: average points per match, win %, difference.
     function standings() {
         return rows
-            .map(r => ({ name: titleCaseName(r.name), points: num(r.won), pointsLost: num(r.lost), wins: whole(r.w), ties: whole(r.t), losses: whole(r.l) }))
+            .map(r => ({ name: titleCaseName(r.name), points: num(r.won), pointsLost: num(r.lost), wins: whole(r.w), ties: whole(r.t), losses: whole(r.l), roundsPlayed: whole(r.w) + whole(r.t) + whole(r.l) }))
             .filter(r => r.name)
-            .sort((a, b) => (b.points - a.points) || ((b.points - b.pointsLost) - (a.points - a.pointsLost)) || (b.wins - a.wins) || (a.losses - b.losses));
+            .sort(standingsComparator('recorded'));
     }
 
     function preview() {
@@ -81,7 +81,7 @@ window.Recorder = (() => {
         if (!list.length) { $('rec-preview').innerHTML = '<p class="helper-text">The standings appear here as you fill in the table.</p>'; return; }
         $('rec-preview').innerHTML = `
             <p class="rec-winner">🏆 Winner: <strong>${esc(list[0].name)}</strong></p>
-            <ol class="rec-standings">${list.map(p => `<li><span>${esc(p.name)}</span><span>${show(p.points)} pts · ${p.wins}W ${p.ties}T ${p.losses}L</span></li>`).join('')}</ol>`;
+            <ol class="rec-standings">${list.map(p => `<li><span>${esc(p.name)}</span><span>${avgActual(p).toFixed(1)} avg · ${show(p.points)} pts · ${p.wins}W ${p.ties}T ${p.losses}L</span></li>`).join('')}</ol>`;
     }
 
     function save() {

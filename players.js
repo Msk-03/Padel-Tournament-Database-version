@@ -19,14 +19,8 @@ window.Players = (() => {
 
     // Same ordering as the in-app leaderboard.
     function ranked(t) {
-        return [...(t.participants || t.players || [])].sort((a, b) => {
-            if (t.format === 'beat-the-box' && a.currentBox && b.currentBox && a.currentBox !== b.currentBox) return a.currentBox - b.currentBox;
-            if ((b.points || 0) !== (a.points || 0)) return (b.points || 0) - (a.points || 0);
-            const dA = exact((a.points || 0) - (a.pointsLost || 0)), dB = exact((b.points || 0) - (b.pointsLost || 0));
-            if (dB !== dA) return dB - dA;
-            if ((b.wins || 0) !== (a.wins || 0)) return (b.wins || 0) - (a.wins || 0);
-            return (a.losses || 0) - (b.losses || 0);
-        });
+        // Same order as the tournament's own table (avg actual points → win % → actual diff).
+        return rankStandings(t.participants || t.players || [], t.format);
     }
 
     function compute() {

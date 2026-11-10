@@ -10,15 +10,20 @@
     const keyOf = s => String(s).trim().replace(/\s+/g, ' ').toLowerCase();
     const title = s => String(s || '').trim().replace(/(^|[\s&\-'(/])(\p{Ll})/gu, (m, a, b) => a + b.toLocaleUpperCase());
     let photos = {}, lastStamp = '', timer = null;
+    const act = p => (typeof p.rawPoints === 'number' ? p.rawPoints : (p.points || 0));
+    const lost = p => (typeof p.rawPointsLost === 'number' ? p.rawPointsLost : (p.pointsLost || 0));
+    const played = p => p.roundsPlayed || ((p.wins || 0) + (p.ties || 0) + (p.losses || 0));
+    const avg = p => (played(p) ? act(p) / played(p) : 0);
+    const win = p => (played(p) ? (p.wins || 0) / played(p) : 0);
 
     function ranked(t) {
+        // Same order as the app: average actual points per match → win % → actual difference.
         return [...(t.participants || [])].sort((a, b) => {
             if (t.format === 'beat-the-box' && a.currentBox && b.currentBox && a.currentBox !== b.currentBox) return a.currentBox - b.currentBox;
-            if ((b.points || 0) !== (a.points || 0)) return (b.points || 0) - (a.points || 0);
-            const dA = (a.points || 0) - (a.pointsLost || 0), dB = (b.points || 0) - (b.pointsLost || 0);
-            if (dB !== dA) return dB - dA;
-            if ((b.wins || 0) !== (a.wins || 0)) return (b.wins || 0) - (a.wins || 0);
-            return (a.losses || 0) - (b.losses || 0);
+            const av = avg(b) - avg(a); if (Math.abs(av) > 1e-9) return av;
+            const wr = win(b) - win(a); if (Math.abs(wr) > 1e-9) return wr;
+            const df = (act(b) - lost(b)) - (act(a) - lost(a)); if (Math.abs(df) > 1e-9) return df;
+            return (b.points || 0) - (a.points || 0);
         });
     }
     function initials(name) {
@@ -55,12 +60,12 @@
           <div class="match-center">
             <h2 class="panel-title">Standings</h2>
             <div class="table-responsive"><table class="leaderboard-table view-table">
-              <thead><tr><th>#</th><th>${team ? 'Team' : 'Player'}</th><th>Pts</th><th>Diff</th><th>W-T-L</th><th>Played</th></tr></thead>
+              <thead><tr><th>#</th><th>${team ? 'Team' : 'Player'}</th><th>Avg</th><th>Win %</th><th>Diff</th><th>W-T-L</th><th>Played</th></tr></thead>
               <tbody>${list.map((p, i) => {
-                  const diff = show(p.points) - show(p.pointsLost || 0);
+                  const diff = show(act(p)) - show(lost(p));
                   return `<tr class="${i === 0 ? 'view-lead' : ''}"><td><strong>${i === 0 ? '👑' : i + 1}</strong></td>
                     <td><span class="view-name">${avatar(p.name, kind)}<strong>${esc(title(p.name))}</strong></span></td>
-                    <td><strong>${show(p.points)}</strong></td><td style="color:${diff >= 0 ? 'var(--c-pos)' : 'var(--c-loss)'}">${diff > 0 ? '+' : ''}${diff}</td>
+                    <td><strong>${avg(p).toFixed(1)}</strong></td><td>${Math.round(win(p) * 100)}%</td><td style="color:${diff >= 0 ? 'var(--c-pos)' : 'var(--c-loss)'}">${diff > 0 ? '+' : ''}${diff}</td>
                     <td>${p.wins || 0}-${p.ties || 0}-${p.losses || 0}</td><td>${p.roundsPlayed || 0}</td></tr>`;
               }).join('')}</tbody>
             </table></div>

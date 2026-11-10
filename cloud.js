@@ -15,6 +15,32 @@ const STORAGE_KEY = "padel_saved_tournaments_v5";
 
 // Names are shown and saved with every word capitalised: "marzouq al hassan" → "Marzouq Al Hassan",
 // "ali & omar" → "Ali & Omar", "al-noor" → "Al-Noor". The rest of each word is kept as typed.
+/* ---------- tournament standings order ----------
+   Every tournament table (live, archive, champion, titles, backup, shared page) is ordered by:
+   1. average actual points per match (match points at 1.0x – no rest points, no multipliers),
+   2. win % (wins ÷ matches played),
+   3. actual points difference (actual points won − actual points lost).
+   Beat the Box keeps its box order first. */
+function actualPts(p) { return typeof p.rawPoints === 'number' ? p.rawPoints : (p.points || 0); }
+function actualLost(p) { return typeof p.rawPointsLost === 'number' ? p.rawPointsLost : (p.pointsLost || 0); }
+function matchesPlayed(p) { return p.roundsPlayed || ((p.wins || 0) + (p.ties || 0) + (p.losses || 0)); }
+function avgActual(p) { const n = matchesPlayed(p); return n ? actualPts(p) / n : 0; }
+function winRate(p) { const n = matchesPlayed(p); return n ? (p.wins || 0) / n : 0; }
+function actualDiff(p) { return Math.round((actualPts(p) - actualLost(p)) * 10000) / 10000; }
+function standingsComparator(fmt) {
+    return (a, b) => {
+        if (fmt === 'beat-the-box' && a.currentBox && b.currentBox && a.currentBox !== b.currentBox) return a.currentBox - b.currentBox;
+        const av = avgActual(b) - avgActual(a);
+        if (Math.abs(av) > 1e-9) return av;
+        const wr = winRate(b) - winRate(a);
+        if (Math.abs(wr) > 1e-9) return wr;
+        const df = actualDiff(b) - actualDiff(a);
+        if (Math.abs(df) > 1e-9) return df;
+        return ((b.points || 0) - (a.points || 0)) || String(a.name).localeCompare(String(b.name));
+    };
+}
+function rankStandings(list, fmt) { return [...(list || [])].sort(standingsComparator(fmt)); }
+
 function titleCaseName(str) {
     return String(str == null ? '' : str).trim().replace(/\s+/g, ' ')
         .replace(/(^|[\s&\-'(/])(\p{Ll})/gu, (m, a, b) => a + b.toLocaleUpperCase());

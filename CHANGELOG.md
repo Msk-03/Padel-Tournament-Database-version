@@ -2,6 +2,8 @@
 
 ## 1.4.0 – 2026-11-09
 
+- Tournament tables (live, archive, champion, titles, backup, shared page, Record past) are ordered by average actual points per match, then win %, then the difference from matches played. Points lost and the difference count matches played only. Total points (with rest points and multipliers) are shown as "Matchmaking pts" and only used to pair players for the next rounds.
+
 - "Remove background" in the photo editor: on-device AI person segmentation (Google MediaPipe, Apache-2.0, ~10 MB downloaded from jsDelivr/Google the first time it is used, then cached). Offline, a plain-background mode removes even backgrounds such as a wall. Photos never leave the device for this. Undo restores the original.
 
 - Photo editor when adding or replacing a player photo: drag to position, zoom (slider, pinch or mouse wheel), rotate, brightness and reset, with a live preview of the card frame. Cut-outs keep their transparency.

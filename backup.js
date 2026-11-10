@@ -10,14 +10,7 @@ window.Backup = (() => {
     const today = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 
     function ranked(t) {
-        return [...(t.participants || t.players || [])].sort((a, b) => {
-            if (t.format === 'beat-the-box' && a.currentBox && b.currentBox && a.currentBox !== b.currentBox) return a.currentBox - b.currentBox;
-            if ((b.points || 0) !== (a.points || 0)) return (b.points || 0) - (a.points || 0);
-            const dA = (a.points || 0) - (a.pointsLost || 0), dB = (b.points || 0) - (b.pointsLost || 0);
-            if (dB !== dA) return dB - dA;
-            if ((b.wins || 0) !== (a.wins || 0)) return (b.wins || 0) - (a.wins || 0);
-            return (a.losses || 0) - (b.losses || 0);
-        });
+        return rankStandings(t.participants || t.players || [], t.format);
     }
     const status = t => t.recorded ? 'Recorded' : t.isFinished ? 'Completed' : 'In progress';
 
@@ -61,22 +54,24 @@ window.Backup = (() => {
             rows: list.map(t => [
                 t.date || '', t.name, fmtName(t.format), status(t), t.totalCourts || '', (t.participants || t.players || []).length,
                 t.totalRoundsPlayed !== undefined ? t.totalRoundsPlayed : (t.totalRounds || 0), t.maxPoints || '',
-                t.isFinished && t.winner && t.winner !== '-' ? t.winner : '', t._synced ? 'Yes' : 'No',
+                t.isFinished && ranked(t)[0] ? ranked(t)[0].name : '', t._synced ? 'Yes' : 'No',
                 t.historyPurgedAt ? 'Removed (60 days)' : t.recorded ? 'Final table only' : 'Kept'
             ])
         };
 
         const standingsRows = [];
         list.forEach(t => ranked(t).forEach((p, i) => standingsRows.push([
-            t.date || '', t.name, fmtName(t.format), i + 1, p.name, whole(p.points), whole(p.pointsLost),
-            whole(p.points) - whole(p.pointsLost), p.roundsPlayed || 0, p.wins || 0, p.ties || 0, p.losses || 0, p.byeCount || 0
+            t.date || '', t.name, fmtName(t.format), i + 1, p.name, r1(avgActual(p)), Math.round(winRate(p) * 1000) / 1000,
+            whole(actualPts(p)), whole(p.points), whole(actualLost(p)), whole(actualPts(p)) - whole(actualLost(p)),
+            matchesPlayed(p), p.wins || 0, p.ties || 0, p.losses || 0, p.byeCount || 0
         ])));
         const standings = {
-            name: 'Final standings', title: 'Final standings', subtitle: 'Every tournament’s final table (in progress tournaments: current table).',
+            name: 'Final standings', title: 'Final standings', subtitle: 'Every tournament’s table, ordered by average actual points per match, then win %, then actual difference.',
             columns: [
                 { header: 'Date', width: 13, type: 'date' }, { header: 'Tournament', width: 30 }, { header: 'Format', width: 16 },
-                { header: 'Rank', width: 7, type: 'int' }, { header: 'Player / team', width: 26 }, { header: 'Points won', width: 11, type: 'int' },
-                { header: 'Points lost', width: 11, type: 'int' }, { header: 'Diff', width: 8, type: 'int' }, { header: 'Played', width: 8, type: 'int' },
+                { header: 'Rank', width: 7, type: 'int' }, { header: 'Player / team', width: 26 }, { header: 'Avg pts / match', width: 11, type: 'num1' },
+                { header: 'Win %', width: 8, type: 'pct' }, { header: 'Actual pts', width: 10, type: 'int' }, { header: 'Matchmaking pts', width: 12, type: 'int' },
+                { header: 'Points lost', width: 10, type: 'int' }, { header: 'Diff', width: 8, type: 'int' }, { header: 'Played', width: 8, type: 'int' },
                 { header: 'Won', width: 7, type: 'int' }, { header: 'Tied', width: 7, type: 'int' }, { header: 'Lost', width: 7, type: 'int' }, { header: 'Rests', width: 7, type: 'int' }
             ],
             rows: standingsRows
