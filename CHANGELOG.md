@@ -2,6 +2,10 @@
 
 ## 1.4.0 – 2026-11-09
 
+- Americano and Team Americano: "Equal games" option (on by default) adds just enough rounds for everyone to play, and rest, the same number of times; the setup screen shows the plan (e.g. 10 players on 2 courts: 10 rounds, each plays 8 and rests 2). Team Americano with more teams than courts now spreads rests evenly in both modes. With the option off, resting players get average points in the tournament table (not in actual points).
+
+- Player stats and the all-time leaderboard add up actual match points (no rest points, no multipliers) for points won, points lost and difference. Each tournament's own table still ranks by total points.
+
 - Player photos now stand on the bottom edge of the card and the details header, without a frame, like a team-sheet player card. Cut-out pictures (transparent background) keep their transparency; ordinary photos fade softly into the card. Players without a photo keep their initials.
 
 - Player cards show average points; "Name" removed from the sort options.

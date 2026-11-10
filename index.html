@@ -138,7 +138,7 @@
         <p class="eyebrow">LET'S PLAY</p>
         <h2 class="panel-title">Tournament details</h2>
         <p class="helper-text">Start with the basics. Players and formats can be fine-tuned before you start.</p>
-        <div class="form-row">
+        <div class="form-row name-row">
           <div class="fg fg-lg"><label for="tournament-name">Tournament name</label><input type="text" id="tournament-name" placeholder="Tournament name"></div>
           <div class="fg"><label for="tournament-date">Date</label><input type="date" id="tournament-date" onchange="onDateChange()"></div>
         </div>
@@ -157,6 +157,10 @@
           <option value="hybrid">Hybrid (2 Americano rounds, then Mexicano with challenge rounds)</option>
         </select>
         <div class="format-card" id="formatCard"><strong id="formatCardTitle">Super Mexicano</strong><span id="formatCardText"></span></div>
+        <div class="equal-games" id="equal-games-box" hidden>
+          <label class="equal-check"><input type="checkbox" id="equal-games" checked><span><b>Equal games</b> – everyone plays and rests the same number of times</span></label>
+          <p class="equal-info" id="equal-games-info"></p>
+        </div>
         <div class="form-row">
           <div class="fg"><label for="match-points">Match points</label>
             <select id="match-points"><option value="8">8 Points</option><option value="16" selected>16 Points</option><option value="20">20 Points</option><option value="24">24 Points</option><option value="32">32 Points</option></select></div>
@@ -341,7 +345,7 @@
         <p class="eyebrow">ALREADY PLAYED</p>
         <h2 class="panel-title">Tournament details</h2>
         <p class="helper-text">Add a tournament that was played before (or on paper) by entering its final table. It goes into the archive and counts in Player stats. It is saved to the online database on devices with the organiser key.</p>
-        <div class="form-row">
+        <div class="form-row name-row">
           <div class="fg fg-lg"><label for="rec-name">Name</label><input type="text" id="rec-name" placeholder="e.g. Summer Mexicano"></div>
           <div class="fg"><label for="rec-date">Date played</label><input type="date" id="rec-date"></div>
         </div>

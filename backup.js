@@ -25,14 +25,14 @@ window.Backup = (() => {
         const rows = Players.careerRows(kind);
         return {
             name: title, title: `${title} – all time`,
-            subtitle: 'Completed tournaments. Ranked by win %, then titles, then points difference.',
+            subtitle: 'Completed tournaments. Ranked by win %, then titles, then points difference. Points are actual match points (no rest points or multipliers).',
             columns: [
                 { header: 'Rank', width: 7, type: 'int' }, { header: kind === 'team' ? 'Team' : 'Player', width: 26 },
                 ...(kind === 'team' ? [] : [{ header: 'Nickname', width: 16 }, { header: 'Side', width: 8 }]),
                 { header: 'Events', width: 9, type: 'int' }, { header: 'Matches', width: 10, type: 'int' },
                 { header: 'Won', width: 8, type: 'int' }, { header: 'Tied', width: 8, type: 'int' }, { header: 'Lost', width: 8, type: 'int' },
                 { header: 'Win %', width: 9, type: 'pct' }, { header: 'Titles', width: 8, type: 'int' }, { header: 'Podiums', width: 10, type: 'int' },
-                { header: 'Points won', width: 12, type: 'int' }, { header: 'Points lost', width: 12, type: 'int' }, { header: 'Diff', width: 9, type: 'int' },
+                { header: 'Actual pts won', width: 12, type: 'int' }, { header: 'Actual pts lost', width: 12, type: 'int' }, { header: 'Diff', width: 9, type: 'int' },
                 { header: 'Avg pts / match', width: 14, type: 'num1' }, { header: 'Best finish', width: 11 }, { header: 'Last played', width: 13, type: 'date' }
             ],
             rows: rows.map(r => [

@@ -81,6 +81,8 @@
     $('formatCardText').textContent = $('format-bubble-text').textContent;
   }
   $('tournament-type').addEventListener('change', formatCard);
+  ['tournament-type', 'court-count', 'participant-count', 'equal-games'].forEach(id => $(id).addEventListener('change', updateEqualGamesInfo));
+  updateEqualGamesInfo();
   $('tipLink').addEventListener('click', e => {
     setMenu(false); showScreen('setup-screen'); sync();
     requestAnimationFrame(() => { $('formatCard').scrollIntoView({ behavior: 'smooth', block: 'center' }); toggleFormatBubble(e); });

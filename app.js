@@ -260,6 +260,33 @@
         renderParticipantGrid(count, true);
     }
 
+    // New tournament screen: "Equal games" option and what it means for the chosen numbers.
+    function updateEqualGamesInfo() {
+        const fmt = document.getElementById('tournament-type').value;
+        const box = document.getElementById('equal-games-box');
+        if (!box) return;
+        const show = fmt === 'americano' || fmt === 'team-americano';
+        box.hidden = !show;
+        if (!show) return;
+        const n = parseInt(document.getElementById('participant-count').value) || 0;
+        const courts = parseInt(document.getElementById('court-count').value) || 1;
+        const isTeam = fmt === 'team-americano', unit = isTeam ? 'team' : 'player';
+        const eq = americanoPlan(n, courts, isTeam, true), norm = americanoPlan(n, courts, isTeam, false);
+        const on = document.getElementById('equal-games').checked;
+        // games per player/team in a normal rotation (some may play one less)
+        const perRoundSlots = isTeam ? Math.min(courts, Math.floor(n / 2)) * 2 : Math.min(n - (n % 4), courts * 4);
+        const slots = norm.rounds * perRoundSlots, lo = Math.floor(slots / n), hi = Math.ceil(slots / n);
+        let text;
+        if (on) {
+            const rests = eq.rounds - eq.games;
+            text = `${eq.rounds} rounds: every ${unit} plays ${eq.games} and rests ${rests}.`;
+        } else {
+            text = lo === hi ? `${norm.rounds} rounds: every ${unit} plays ${lo}.`
+                : `${norm.rounds} rounds: some ${unit}s play ${lo}, others ${hi}. Resting ${unit}s get average points in the tournament table.`;
+        }
+        document.getElementById('equal-games-info').textContent = text;
+    }
+
     function onFormatChange() {
         const fmt = document.getElementById('tournament-type').value;
         const courtCount = parseInt(document.getElementById('court-count').value) || 2;
@@ -369,6 +396,7 @@
             lastTeamOpponentRound: lastTeamOpponentRound,
             hybridState: hybridState,
             playingExtraRounds: playingExtraRounds,
+            equalGames: equalGames,
             roundSnapshots: roundSnapshots,
             editLockRound: editLockRound,
             savedAt: savedAt,
@@ -390,12 +418,80 @@
         return titleCaseName(str.replace(/^[#\d]+[\.\)\-\:\s]+\s*/, '').trim());
     }
 
+    // Equal games (Americano formats): enough rounds that everyone plays, and rests, the same number of times.
+    let equalGames = false;
+
+    // Rounds for an Americano tournament. Normal: one full rotation (n−1, or n when odd).
+    // Equal games: the fewest rounds (at least one rotation) after which everyone has played,
+    // and rested, the same number of times.
+    function americanoPlan(n, courts, isTeam, equal) {
+        const base = n % 2 === 0 ? n - 1 : n;
+        if (!equal) return { rounds: base };
+        const active = isTeam ? Math.min(courts, Math.floor(n / 2)) * 2 : Math.min(n - (n % 4), courts * 4);
+        const rests = n - active;
+        if (rests === 0) return { rounds: base, games: base, rests: 0 };
+        let r = base;
+        while ((r * rests) % n !== 0) r++;
+        return { rounds: r, games: r - (r * rests) / n, rests: (r * rests) / n };
+    }
+
     function calculateTotalAmericanoRounds() {
         const count = participants.length;
         if (format === 'team-americano' || format === 'americano') {
+            if (fullPrecomputedSchedule.length) return fullPrecomputedSchedule.length;
             return (count % 2 === 0) ? (count - 1) : count;
         }
         return 9999;
+    }
+
+    // Equal games: pick who rests this round at random, but only from those who still need rests,
+    // and always including anyone who must rest in every remaining round, so that by the last round
+    // everyone has rested exactly `target` times. Varying the choice lets the pairings mix more.
+    function pickEqualRests(pool, k, rests, target, roundsLeftIncl) {
+        const need = x => target - rests[x.id];
+        const must = pool.filter(x => need(x) >= roundsLeftIncl);
+        const open = pool.filter(x => need(x) > 0 && need(x) < roundsLeftIncl).sort(() => Math.random() - 0.5)
+            .sort((a, b) => need(b) - need(a) + (Math.random() - 0.5) * 1.5);
+        return [...must, ...open].slice(0, k);
+    }
+
+    /* Team Americano when there are more teams than courts can take: whoever has rested least rests
+       next (so rests stay level), and the teams on court are paired to avoid repeat matchups. */
+    function buildBalancedTeamSchedule(totalRounds) {
+        const teams = [...participants];
+        const active = Math.min(totalCourts, Math.floor(teams.length / 2)) * 2;
+        const rests = Object.fromEntries(teams.map(t => [t.id, 0]));
+        const lastRest = Object.fromEntries(teams.map(t => [t.id, -9]));
+        const met = {};
+        const key = (a, b) => [a.id, b.id].sort().join('|');
+        fullPrecomputedSchedule = [];
+        for (let r = 1; r <= totalRounds; r++) {
+            let best = null, byes = null, bestCost = Infinity;
+            for (let trial = 0; trial < 600 && bestCost > 0; trial++) {
+                // who rests: fewest rests so far (ties broken at random, so different trials try different teams)
+                let sitting;
+                if (equalGames) {
+                    sitting = pickEqualRests(teams, teams.length - active, rests, totalRounds * (teams.length - active) / teams.length, totalRounds - r + 1);
+                } else {
+                    const order = [...teams].sort(() => Math.random() - 0.5).sort((a, b) =>
+                        (rests[a.id] - rests[b.id]) || ((lastRest[a.id] === r - 1) - (lastRest[b.id] === r - 1)));
+                    sitting = order.slice(0, teams.length - active);
+                }
+                const out = new Set(sitting.map(t => t.id));
+                const sh = teams.filter(t => !out.has(t.id)).sort(() => Math.random() - 0.5);
+                const pairs = [];
+                let cost = 0;
+                for (let i = 0; i < sh.length; i += 2) { pairs.push([sh[i], sh[i + 1]]); cost += (met[key(sh[i], sh[i + 1])] || 0) ** 2; }
+                if (cost < bestCost) { bestCost = cost; best = pairs; byes = sitting; }
+            }
+            best.forEach(([a, b]) => { met[key(a, b)] = (met[key(a, b)] || 0) + 1; });
+            byes.forEach(t => { rests[t.id]++; lastRest[t.id] = r; });
+            fullPrecomputedSchedule.push({
+                round: r,
+                matches: best.map((m, c) => ({ courtNum: c + 1, team1Id: m[0].id, team2Id: m[1].id, p1: m[0].name, p2: '', p3: m[1].name, p4: '' })),
+                byes
+            });
+        }
     }
 
     /* 1. Team Americano: Deterministic Round-Robin Circle Method (ZERO repeat matchups) */
@@ -458,7 +554,7 @@
     function buildStandardAmericanoSchedule() {
         const N = participants.length;
         const activePerRound = Math.min(N - (N % 4), totalCourts * 4);
-        const totalRounds = calculateTotalAmericanoRounds();
+        const totalRounds = americanoPlan(N, totalCourts, false, equalGames).rounds;
         const pCounts = {};
         const byeCounts = {};
         const lastBye = {};
@@ -475,6 +571,8 @@
             let sitting = [];
             if (numByes > 0) {
                 let candidates = [...participants].sort((a, b) => {
+                    // Equal games: whoever has rested least rests first, so rests stay level.
+                    if (equalGames && byeCounts[a.id] !== byeCounts[b.id]) return byeCounts[a.id] - byeCounts[b.id];
                     const aConsecutive = (lastBye[a.id] === r - 1) ? 1000 : 0;
                     const bConsecutive = (lastBye[b.id] === r - 1) ? 1000 : 0;
                     if (aConsecutive !== bConsecutive) return aConsecutive - bConsecutive;
@@ -482,14 +580,30 @@
                 });
                 sitting = candidates.slice(0, numByes);
             }
-            const sittingIds = new Set(sitting.map(s => s.id));
-            const active = participants.filter(p => !sittingIds.has(p.id));
-
-            let bestMatches = null;
+            let bestMatches = null, bestSitting = sitting;
             let bestCost = Infinity;
+            const equalTarget = totalRounds * numByes / N;
+            // When one normal rotation is already equal, the normal rest order is used (it mixes partners best).
+            const spread = equalGames && numByes > 0 && totalRounds !== (N % 2 === 0 ? N - 1 : N);
 
-            for (let trial = 0; trial < 150; trial++) {
+            for (let trial = 0; trial < (spread ? 600 : 300); trial++) {
+                // Equal games: each trial may rest a different (still fair) set of players.
+                const trialSitting = spread ? pickEqualRests(participants, numByes, byeCounts, equalTarget, totalRounds - r + 1) : sitting;
+                const sittingIds = new Set(trialSitting.map(s => s.id));
+                const active = participants.filter(p => !sittingIds.has(p.id));
                 let shuffled = [...active].sort(() => Math.random() - 0.5);
+                // Half the trials: build partner pairs greedily (each player takes the partner they have
+                // played with least), which finds repeat-free rounds far more often.
+                if (trial % 2 === 1) {
+                    const pool = [...shuffled], ordered = [];
+                    while (pool.length > 1) {
+                        const a = pool.shift();
+                        let bi = 0, bc = Infinity;
+                        pool.forEach((x, i) => { const cnt = (pCounts[[a.id, x.id].sort().join('-')] || 0) + Math.random() * 0.1; if (cnt < bc) { bc = cnt; bi = i; } });
+                        ordered.push(a, pool.splice(bi, 1)[0]);
+                    }
+                    shuffled = ordered.concat(pool);
+                }
                 let trialMatches = [];
                 let cost = 0;
 
@@ -528,9 +642,11 @@
                 if (cost < bestCost) {
                     bestCost = cost;
                     bestMatches = trialMatches;
+                    bestSitting = trialSitting;
                     if (cost === 0) break;
                 }
             }
+            sitting = bestSitting;
 
             bestMatches.forEach(m => {
                 let k1 = [m.ids[0], m.ids[1]].sort().join('-');
@@ -621,8 +737,13 @@
         }
 
         // Build exact schedules with zero repeats
+        equalGames = (format === 'americano' || format === 'team-americano') && !!(document.getElementById('equal-games') || {}).checked;
         if (format === 'team-americano') {
-            buildTeamAmericanoSchedule();
+            // The circle method is perfect while every pairing fits on court each round; with fewer
+            // courts it would rest the same teams again and again, so use the balanced schedule.
+            const n = participants.length;
+            if (Math.floor(n / 2) <= totalCourts) buildTeamAmericanoSchedule();
+            else buildBalancedTeamSchedule(americanoPlan(n, totalCourts, true, equalGames).rounds);
         } else if (format === 'americano') {
             buildStandardAmericanoSchedule();
         }
@@ -2100,6 +2221,7 @@
         lastTeamOpponentRound = t.lastTeamOpponentRound || {};
         hybridState = format === 'hybrid' ? { ...newHybridState(), ...(t.hybridState || {}) } : null;
         playingExtraRounds = !!t.playingExtraRounds;
+        equalGames = !!t.equalGames;
         roundSnapshots = Array.isArray(t.roundSnapshots) ? t.roundSnapshots : [];
         editLockRound = t.editLockRound || 0;
         editingRound = null;

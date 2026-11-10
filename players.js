@@ -43,6 +43,11 @@ window.Players = (() => {
             const restPts = name => (t.matchHistory || []).reduce((n, r) =>
                 n + (r.byesApplied || []).filter(b => b.name === name).reduce((m, b) => m + (b.pts || 0), 0), 0);
             const rawOf = p => (typeof p.rawPoints === 'number' ? p.rawPoints : Math.max(0, (p.points || 0) - restPts(p.name)));
+            // Actual points conceded in matches (1.0x, no rests). Older saves: every match adds up to the
+            // match points, so lost = matches × match points − actual points won. Recorded tables keep what was typed.
+            const rawLostOf = p => typeof p.rawPointsLost === 'number' ? p.rawPointsLost
+                : t.recorded ? (p.pointsLost || 0)
+                : Math.max(0, (p.roundsPlayed || 0) * (t.maxPoints || 16) - rawOf(p));
             order.forEach((p, i) => {
                 const key = keyOf(p.name || '');
                 if (!key || seen.has(key)) return;
@@ -52,7 +57,7 @@ window.Players = (() => {
                 if ((t.date || '') >= rec.lastDate) { rec.lastDate = t.date || ''; rec.name = titleCaseName(p.name); }
                 rec.events.push({
                     id: t.id, tName: t.name, date: t.date || '', format: t.format, finished: !!t.isFinished,
-                    rank: i + 1, field: order.length, points: p.points || 0, lost: p.pointsLost || 0, raw: rawOf(p),
+                    rank: i + 1, field: order.length, points: p.points || 0, lost: p.pointsLost || 0, raw: rawOf(p), rawLost: rawLostOf(p),
                     played: p.roundsPlayed || 0, wins: p.wins || 0, ties: p.ties || 0, losses: p.losses || 0
                 });
             });
@@ -70,7 +75,9 @@ window.Players = (() => {
                 played: sum('played'), wins, ties, losses,
                 winPct: decided ? (100 * wins) / decided : 0,
                 avg: sum('played') ? exact(sum('raw') / sum('played')) : 0,
-                points: sum('points'), lost: sum('lost'), diff: show(sum('points')) - show(sum('lost')),
+                // Career totals use actual match points (no rest points, no multipliers). Each tournament's
+                // own table still ranks by its total points.
+                points: sum('raw'), lost: sum('rawLost'), diff: show(sum('raw')) - show(sum('rawLost')),
                 best: fin.length ? Math.min(...fin.map(e => e.rank)) : null
             };
         });
@@ -192,7 +199,7 @@ window.Players = (() => {
                 <div><b class="w">${r.wins}</b><small>Won</small></div>
                 <div><b class="t">${r.ties}</b><small>Tied</small></div>
                 <div><b class="l">${r.losses}</b><small>Lost</small></div>
-                <div><b>${cell(r.points)}</b><small>Pts won</small></div>
+                <div><b>${cell(r.points)}</b><small>Actual pts</small></div>
                 <div><b>${signed(r.diff)}</b><small>Diff</small></div>
             </div>
             ${ui.editing === r.key + ':nickname' ? `
@@ -243,7 +250,7 @@ window.Players = (() => {
         $('pl-help').textContent = (ui.group === 'main'
             ? `${unit === 'team' ? 'Teams' : 'Players'} with ${min}+ matches`
             : `Everyone, whatever their number of matches`)
-            + ', ranked by win %, then titles, then points difference. Titles count completed tournaments only. Tap a card for details.'
+            + ', ranked by win %, then titles, then points difference. Points here are actual match points (no rest points or multipliers); each tournament\u2019s own table still uses its total points. Titles count completed tournaments only. Tap a card for details.'
             + (ui.from || ui.to ? ` Showing tournaments played ${periodText()}.` : '');
 
         $('pl-sorts').innerHTML = SORTS.map(([k, label]) =>
