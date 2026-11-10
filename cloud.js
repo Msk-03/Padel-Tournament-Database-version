@@ -146,9 +146,11 @@ window.CloudSync = (() => {
         queueSave();
         return true;
     }
-    function mayChangeProfile(kind, name) {
+    // field: 'nickname' or 'side' (or omitted for either). Adding is open; changing a saved value needs the master key.
+    function mayChangeProfile(kind, name, field) {
         const p = readProfiles()[photoKey(kind, name)];
-        return !p || !(p.nickname || p.side) || !p.synced || state.api === 'none' || isMaster();
+        const has = p && (field ? p[field] : (p.nickname || p.side));
+        return !has || !p.synced || state.api === 'none' || isMaster();
     }
     async function pushProfiles() {
         const all = readProfiles();

@@ -783,3 +783,43 @@ input[type=date]::-webkit-calendar-picker-indicator{opacity:.6;cursor:pointer}
   .pl-card .pl-mini dt{font-size:8px;letter-spacing:.8px;white-space:nowrap}
   .pl-card .pl-mini dd{font-size:13px}
 }
+
+/* ---------- player photos: shown like a player card (no frame, standing on the bottom edge) ---------- */
+.pl-avatar.has-photo{background:none!important}
+.pl-avatar.is-cutout img{object-fit:contain;object-position:center bottom}
+.pl-avatar.is-photo img{object-fit:cover;object-position:center 20%}
+/* an ordinary photo (with its own background) fades into the card instead of showing a hard rectangle */
+.pl-avatar.is-photo{-webkit-mask-image:radial-gradient(120% 95% at 50% 100%,#000 55%,transparent 82%);mask-image:radial-gradient(120% 95% at 50% 100%,#000 55%,transparent 82%)}
+.pl-card.with-photo{grid-template-columns:112px minmax(0,1fr);gap:14px;min-height:132px;padding:0 70px 0 6px;align-items:stretch}
+.pl-card.with-photo>.pl-avatar.has-photo{width:112px;height:124px;align-self:end;border-radius:0;box-shadow:none!important}
+.pl-card.with-photo .pl-card-body{align-self:center;padding:14px 0}
+.pl-hero.with-photo{grid-template-columns:minmax(150px,44%) minmax(0,1fr);align-items:stretch;min-height:300px;padding:0 24px 0 4px;gap:16px}
+.pl-hero.with-photo .pl-photo{align-self:end;height:300px}
+.pl-hero.with-photo .pl-avatar-lg.has-photo{width:100%;height:100%;border-radius:0;box-shadow:none}
+.pl-hero.with-photo .pl-hero-text{align-self:center;padding:26px 0}
+@media (max-width:759px){
+  .pl-card.with-photo{grid-template-columns:84px minmax(0,1fr);grid-template-areas:"av name" "av nick" "av mini";column-gap:12px;min-height:118px;padding:0 46px 0 4px}
+  .pl-card.with-photo>.pl-avatar.has-photo{width:84px;height:112px;grid-area:av;align-self:end}
+  .pl-card.with-photo .pl-name{padding-top:14px}
+  .pl-card.with-photo .pl-mini{grid-template-columns:repeat(3,minmax(0,1fr));margin:8px 0 14px;row-gap:6px}
+  .pl-hero.with-photo{grid-template-columns:132px minmax(0,1fr);min-height:220px;padding:0 16px 0 0;gap:12px}
+  .pl-hero.with-photo .pl-photo{height:220px}
+  .pl-hero.with-photo .pl-hero-text{padding:20px 0 18px}
+}
+.pl-card.with-photo>.pl-avatar.has-photo{height:auto;min-height:124px;align-self:stretch;padding-top:8px}
+@media (max-width:759px){ .pl-card.with-photo>.pl-avatar.has-photo{min-height:118px;width:92px;padding-top:6px} .pl-card.with-photo{grid-template-columns:92px minmax(0,1fr)} }
+.pl-card.with-photo>.pl-avatar.has-photo{position:relative;padding:0}
+.pl-card.with-photo>.pl-avatar.has-photo img{position:absolute;left:0;right:0;bottom:0;top:8px;width:100%;height:calc(100% - 8px)}
+
+/* ordinary photos: shown whole and sharp, filling the photo area edge to edge (no fading) */
+.pl-avatar.is-photo{-webkit-mask-image:none!important;mask-image:none!important}
+.pl-card.with-photo:has(.is-photo){padding-left:0}
+.pl-card.with-photo>.pl-avatar.is-photo img{top:0;height:100%;object-fit:cover;object-position:center 22%}
+.pl-hero.with-photo:has(.is-photo){padding-left:0}
+.pl-hero.with-photo .pl-photo:has(.is-photo){align-self:stretch;height:auto;min-height:300px;position:relative}
+.pl-hero.with-photo .is-photo{position:absolute;inset:0}
+.pl-hero.with-photo .is-photo img{object-fit:cover;object-position:center 22%}
+@media (max-width:759px){ .pl-hero.with-photo .pl-photo:has(.is-photo){min-height:220px} }
+/* nickname in bold */
+.pl-nick{font-weight:700;font-style:normal}
+.pl-hero-nick{font-weight:700;font-style:normal}

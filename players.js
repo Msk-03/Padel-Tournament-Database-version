@@ -116,7 +116,7 @@ window.Players = (() => {
     function avatar(r, cls = '') {
         const ph = photoOf(r);
         return ph
-            ? `<span class="pl-avatar has-photo ${cls}" aria-hidden="true"><img src="${ph}" alt="" loading="lazy"></span>`
+            ? `<span class="pl-avatar has-photo ${isCutout(ph) ? 'is-cutout' : 'is-photo'} ${cls}" aria-hidden="true"><img src="${ph}" alt="" loading="lazy"></span>`
             : `<span class="pl-avatar ${cls}" style="--h:${hueOf(r.key)}" aria-hidden="true">${esc(initials(r.name))}</span>`;
     }
     const signed = n => (n > 0 ? '+' : '') + n;
@@ -129,7 +129,7 @@ window.Players = (() => {
         const prof = profileOf(r);
         const [first, last] = nameLines(r.name);
         const crown = r.rank === 1 ? '<span class="pl-crown" title="Leader">👑</span>' : '';
-        return `<article class="pl-row pl-card ${selected ? 'open' : ''}" data-key="${esc(r.key)}" tabindex="0" role="button" aria-expanded="${selected}">
+        return `<article class="pl-row pl-card ${selected ? 'open' : ''} ${photoOf(r) ? 'with-photo' : ''}" data-key="${esc(r.key)}" tabindex="0" role="button" aria-expanded="${selected}">
             ${avatar(r)}
             <div class="pl-card-body">
                 <h3 class="pl-name">${crown}<span class="pl-first">${esc(first)}</span> <strong>${esc(last)}</strong>${prof && prof.side ? `<span class="pl-side" title="${SIDE_LABEL[prof.side]}">${SIDE_SHORT[prof.side]}</span>` : ''}</h3>
@@ -166,7 +166,7 @@ window.Players = (() => {
             : lastPct < r.winPct - 0.5 ? '<span class="pl-trend down" title="Last tournament below career win %">▼</span>' : '';
         const group = ui.group === 'main' ? 'Leaderboard' : 'All players';
         return `<section class="pl-detail" aria-label="${esc(r.name)} details">
-            <div class="pl-hero">
+            <div class="pl-hero ${photoOf(r) ? 'with-photo' : ''}">
                 <div class="pl-photo">${avatar(r, photoOf(r) ? 'pl-avatar-lg pl-portrait' : 'pl-avatar-lg')}</div>
                 <div class="pl-hero-text">
                     <p class="pl-eyebrow">${r.rank === 1 ? '👑 ' : ''}#${r.rank} · ${group}</p>
@@ -195,19 +195,24 @@ window.Players = (() => {
                 <div><b>${cell(r.points)}</b><small>Pts won</small></div>
                 <div><b>${signed(r.diff)}</b><small>Diff</small></div>
             </div>
-            ${ui.editing === r.key ? `
-            <form class="pl-details-form" data-details-form>
+            ${ui.editing === r.key + ':nickname' ? `
+            <form class="pl-details-form" data-details-form="nickname">
                 <label>Nickname<input type="text" name="nickname" maxlength="40" value="${esc(prof ? prof.nickname : '')}" placeholder="e.g. The Wall"></label>
-                <fieldset><legend>Preferred side</legend>
+                <div class="pl-details-actions"><button type="button" class="btn btn-secondary btn-sm" data-details="cancel">Cancel</button><button type="submit" class="btn btn-primary btn-sm">Save nickname</button></div>
+            </form>` : ''}
+            ${ui.editing === r.key + ':side' ? `
+            <form class="pl-details-form" data-details-form="side">
+                <fieldset><legend>Playing side</legend>
                     ${[['', 'Not set'], ['left', 'Left'], ['right', 'Right'], ['both', 'Both']].map(([v, l]) =>
                         `<label class="pl-side-opt"><input type="radio" name="side" value="${v}" ${(prof ? prof.side : '') === v ? 'checked' : ''}><span>${l}</span></label>`).join('')}
                 </fieldset>
-                <div class="pl-details-actions"><button type="button" class="btn btn-secondary btn-sm" data-details="cancel">Cancel</button><button type="submit" class="btn btn-primary btn-sm">Save details</button></div>
+                <div class="pl-details-actions"><button type="button" class="btn btn-secondary btn-sm" data-details="cancel">Cancel</button><button type="submit" class="btn btn-primary btn-sm">Save side</button></div>
             </form>` : ''}
             <div class="pl-photo-links">
                 <button data-photo="set"><svg><use href="#i-camera"/></svg>${photoOf(r) ? 'Change photo' : 'Add photo'}</button>
                 ${photoOf(r) ? '<button data-photo="remove">Remove photo</button>' : ''}
-                ${ui.editing === r.key ? '' : `<button data-details="edit"><svg><use href="#i-record"/></svg>${prof ? 'Edit nickname & side' : 'Add nickname & side'}</button>`}
+                ${ui.editing === r.key + ':nickname' ? '' : `<button data-details="nickname"><svg><use href="#i-record"/></svg>${prof && prof.nickname ? 'Edit nickname' : 'Add nickname'}</button>`}
+                ${ui.editing === r.key + ':side' ? '' : `<button data-details="side"><svg><use href="#i-arrow"/></svg>${prof && prof.side ? 'Change playing side' : 'Set playing side'}</button>`}
             </div>
         </section>`;
     }
@@ -264,18 +269,51 @@ window.Players = (() => {
         aside.innerHTML = wide.matches && sel ? detailHtml(sel, rows) : '';
     }
 
-    // Resize a chosen picture to a 360×450 JPEG (~30 KB): cropped to fill, keeping the upper
-    // part (faces) in view. Small enough to keep on the device and in the database.
+    // Photos are stored small. Two kinds:
+    //  - a cut-out (PNG/WebP with a transparent background, e.g. iPhone "Lift subject"): the empty
+    //    edges are trimmed and it is kept transparent, so it stands on the card like a player photo;
+    //  - an ordinary photo: cropped to 4:5 around the upper part (faces) and saved as a ~30 KB JPEG.
+    const isCutout = data => /^data:image\/(png|webp)/.test(data || '');
     async function shrinkPhoto(file) {
         const url = URL.createObjectURL(file);
         try {
             const img = new Image();
             img.src = url;
             await img.decode();
-            const W = 360, H = 450, scale = Math.max(W / img.naturalWidth, H / img.naturalHeight);
-            const sw = W / scale, sh = H / scale;
-            const sx = (img.naturalWidth - sw) / 2, sy = Math.max(0, (img.naturalHeight - sh) * 0.3);
+            const iw = img.naturalWidth, ih = img.naturalHeight;
+            // Look for transparency (only PNG / WebP / GIF can have it).
+            let box = null;
+            if (/png|webp|gif/i.test(file.type)) {
+                const sc = Math.min(1, 400 / Math.max(iw, ih));
+                const t = document.createElement('canvas');
+                t.width = Math.max(1, Math.round(iw * sc)); t.height = Math.max(1, Math.round(ih * sc));
+                const tx = t.getContext('2d', { willReadFrequently: true });
+                tx.drawImage(img, 0, 0, t.width, t.height);
+                const px = tx.getImageData(0, 0, t.width, t.height).data;
+                let minX = t.width, minY = t.height, maxX = -1, maxY = -1, clear = 0;
+                for (let y = 0; y < t.height; y++) for (let x = 0; x < t.width; x++) {
+                    const a = px[(y * t.width + x) * 4 + 3];
+                    if (a < 20) { clear++; continue; }
+                    if (x < minX) minX = x; if (x > maxX) maxX = x; if (y < minY) minY = y; if (y > maxY) maxY = y;
+                }
+                if (maxX >= 0 && clear > t.width * t.height * 0.05) box = [minX / sc, minY / sc, (maxX - minX + 1) / sc, (maxY - minY + 1) / sc];
+            }
             const c = document.createElement('canvas');
+            if (box) {
+                for (const maxH of [520, 420, 340]) {
+                    const scale = Math.min(maxH / box[3], 420 / box[2], 1);
+                    c.width = Math.round(box[2] * scale); c.height = Math.round(box[3] * scale);
+                    const cx = c.getContext('2d');
+                    cx.clearRect(0, 0, c.width, c.height);
+                    cx.drawImage(img, box[0], box[1], box[2], box[3], 0, 0, c.width, c.height);
+                    let out = c.toDataURL('image/webp', 0.85);
+                    if (!/^data:image\/webp/.test(out)) out = c.toDataURL('image/png');
+                    if (out.length < 380000) return out;
+                }
+            }
+            const W = 360, H = 450, scale = Math.max(W / iw, H / ih);
+            const sw = W / scale, sh = H / scale;
+            const sx = (iw - sw) / 2, sy = Math.max(0, (ih - sh) * 0.3);
             c.width = W; c.height = H;
             c.getContext('2d').drawImage(img, sx, sy, sw, sh, 0, 0, W, H);
             return c.toDataURL('image/jpeg', 0.82);
@@ -471,9 +509,10 @@ window.Players = (() => {
             const dt = e.target.closest('[data-details]');
             if (dt) {
                 const sel = currentRows.find(r => r.key === ui.open);
-                if (dt.dataset.details === 'edit' && sel) {
-                    if (profileOf(sel) && !CloudSync.mayChangeProfile(sel.kind, sel.key)) { alert(CloudSync.MASTER_ONLY); return; }
-                    ui.editing = sel.key;
+                const field = dt.dataset.details;
+                if ((field === 'nickname' || field === 'side') && sel) {
+                    if (!CloudSync.mayChangeProfile(sel.kind, sel.key, field)) { alert(CloudSync.MASTER_ONLY); return; }
+                    ui.editing = sel.key + ':' + field;
                 } else ui.editing = null;
                 render();
                 return;
@@ -489,8 +528,12 @@ window.Players = (() => {
             e.preventDefault();
             const sel = currentRows.find(r => r.key === ui.open);
             if (!sel) return;
-            const fd = new FormData(form);
-            CloudSync.setProfile(sel.kind, sel.key, { nickname: String(fd.get('nickname') || ''), side: String(fd.get('side') || '') });
+            const fd = new FormData(form), cur = profileOf(sel) || { nickname: '', side: '' };
+            const field = form.dataset.detailsForm;
+            CloudSync.setProfile(sel.kind, sel.key, {
+                nickname: field === 'nickname' ? String(fd.get('nickname') || '') : cur.nickname,
+                side: field === 'side' ? String(fd.get('side') || '') : cur.side
+            });
             ui.editing = null;
             render();
         };

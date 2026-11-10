@@ -2,6 +2,8 @@
 
 ## 1.4.0 – 2026-11-09
 
+- Player photos now stand on the bottom edge of the card and the details header, without a frame, like a team-sheet player card. Cut-out pictures (transparent background) keep their transparency; ordinary photos fade softly into the card. Players without a photo keep their initials.
+
 - Player cards show average points; "Name" removed from the sort options.
 - Layout pass checked at 10 screen widths (320–1440 px): date field stays inside its box (also on iPhone), every button pair has equal width and height, archive and player cards reflow on small phones.
 
